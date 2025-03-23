@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -61,7 +60,7 @@ func newClientRequest() *clientRequest {
 		SetRetryCount(3).
 		SetRetryWaitTime(2 * time.Second).
 		SetRetryMaxWaitTime(5 * time.Second).
-		SetTimeout(2 * time.Second)
+		SetTimeout(5 * time.Second)
 
 	return &clientRequest{
 		client: client,
@@ -164,7 +163,7 @@ type options struct {
 
 func parseOptions() *options {
 	minChapter := flag.Int("min-ch", 0, "Minimum chapter to download (inclusive)")
-	isSingle := flag.Int("single", 0, "1 chapter to download (inclusive)")
+	isSingle := flag.Int("single", 0, "1 chapter to download")
 	maxChapter := flag.Int("max-ch", math.MaxInt, "Maximum chapter to download (inclusive)")
 	maxProcessing := flag.Int("x", 10, "Maximum number of concurrent workers")
 	url := flag.String("url", "", "Website URL")
@@ -222,44 +221,40 @@ func getChapterName(urlRaw string) string {
 	return urlRaw
 }
 
-func main() {
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] <url>\n", os.Args[0])
-		fmt.Fprintln(os.Stderr, "Options:")
-		flag.PrintDefaults()
-	}
+func usage() {
+	fmt.Fprintf(os.Stderr, "Usage: %s [options] <url>\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "Options:")
+	flag.PrintDefaults()
+}
 
-	opts := parseOptions()
-	req := newClientRequest()
-	defer func() {
-		if req.client != nil {
-			req.client.Close()
-		}
-	}()
-
+func createComicDirectory() string {
 	comicDir := "comic"
 	if err := os.MkdirAll(comicDir, os.ModePerm); err != nil {
 		fmt.Printf("Error creating comic directory: %v\n", err)
 		os.Exit(1)
 	}
+	return comicDir
+}
 
-	htmlTagListLink := "ul li span.lchx a"
-	htmlTagPageLink := "div#chimg-auh img"
+// REFACTOR: split this
+func getAllChapterLinks(req *clientRequest, opts *options, htmlTagListLink string) ([]string, error) {
 	allLink, err := req.getAllChapterLinks(*opts, htmlTagListLink)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("error getting chapter links: %w", err)
 	}
+	return allLink, nil
+}
 
+func processChapters(req *clientRequest, opts *options, comicDir string, allLink []string) {
 	g := new(errgroup.Group)
 	g.SetLimit(opts.maxProcessing)
 
 	var generatedFiles []string
-	for al := range slices.Values(allLink) {
-		al := al // Create a new variable for the goroutine
+	for _, al := range allLink {
+		al := al
 		g.Go(func() error {
 			outFile := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
-			imgFromPage, err := req.getLinkFromPage(al, htmlTagPageLink)
+			imgFromPage, err := req.getLinkFromPage(al, "div#chimg-auh img")
 			if err != nil {
 				return fmt.Errorf("error fetching page links: %w", err)
 			}
@@ -269,7 +264,7 @@ func main() {
 			}
 
 			comicFile := newPDFComicImage()
-			for imgURL := range slices.Values(imgFromPage) {
+			for _, imgURL := range imgFromPage {
 				lowerCaseImgURL := strings.ToLower(imgURL)
 				if strings.Contains(lowerCaseImgURL, ".gif") {
 					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
@@ -302,4 +297,20 @@ func main() {
 		fmt.Printf("Error processing chapters: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func main() {
+	flag.Usage = usage
+	opts := parseOptions()
+	req := newClientRequest()
+	defer req.client.Close()
+
+	comicDir := createComicDirectory()
+	allLink, err := getAllChapterLinks(req, opts, "ul li span.lchx a")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	processChapters(req, opts, comicDir, allLink)
 }
