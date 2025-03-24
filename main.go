@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,7 +41,6 @@ type pdfComicImage struct {
 }
 
 func newPDFComicImage() *pdfComicImage {
-	logger.Println("[INFO] Creating new PDF document")
 	pdf := gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{Unit: gopdf.UnitPT, PageSize: *gopdf.PageSizeA4})
 	return &pdfComicImage{pdf: &pdf}
@@ -80,32 +80,51 @@ type requestTimeOut struct {
 	retryWaitTime    time.Duration
 	retryMaxWaitTime time.Duration
 	timeOut          time.Duration
+	userAgent        string
 }
 
 func newClientRequest(t *requestTimeOut) *clientRequest {
 	logger.Println("[INFO] Initializing HTTP client with retry configuration")
 	client := resty.New().
 		SetRetryCount(t.retryCount).
-		SetRetryWaitTime(t.retryWaitTime * time.Second).
-		SetRetryMaxWaitTime(t.retryMaxWaitTime * time.Second).
-		SetTimeout(t.timeOut * time.Second)
+		SetRetryWaitTime(t.retryWaitTime*time.Second).
+		SetRetryMaxWaitTime(t.retryMaxWaitTime*time.Second).
+		SetTimeout(t.timeOut*time.Second).
+		SetHeader("User-Agent", randomUserAgent())
 
 	return &clientRequest{
 		client: client,
 	}
 }
+func (c *clientRequest) isStatusCodeOK(resp *resty.Response) (bool, string) {
+	switch resp.StatusCode() {
+	case http.StatusTooManyRequests:
+		return true, "IP blocked: Too Many Requests (429)"
+	case http.StatusForbidden:
+		return true, "IP blocked: Forbidden (403)"
+	case http.StatusServiceUnavailable:
+		return true, "IP blocked: Service Unavailable (503)"
+	case http.StatusOK:
+		return false, "Status OK"
+	}
+	return false, "IP not blocked"
+}
 
-func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]string, error) {
+func (d *clientRequest) getAllChapterLinks(opts options, tag htmlTagAttr) ([]string, error) {
 	isRange := opts.minChapter > 0 && opts.maxChapter >= opts.minChapter
 	isSingle := opts.isSingle != 0
 
-	logger.Printf("[INFO] Fetching chapter links from: %s\n", opts.urlRaw)
 	response, err := d.client.R().Get(opts.urlRaw)
 	if err != nil {
 		logger.Printf("[ERROR] Failed to fetch URL: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer response.Body.Close()
+
+	isIPBlocked, reason := d.isStatusCodeOK(response)
+	if isIPBlocked {
+		logger.Printf("[WARNING] BLOCKED : %s\n", reason)
+	}
 
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
@@ -121,8 +140,8 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 	}
 
 	var links []string
-	document.Find(htmlTag).Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
+	document.Find(tag.listChapterURL).Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr(tag.attrChapter)
 		if exists {
 			links = append(links, href)
 		}
@@ -143,17 +162,21 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 		links = links[opts.isSingle-1 : opts.isSingle]
 	}
 
-	logger.Printf("[INFO] Returning %d chapters to process\n", len(links))
 	return links, nil
 }
 
-func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]string, error) {
+func (d *clientRequest) getLinkFromPage(rawURL string, tag htmlTagAttr) ([]string, error) {
 	response, err := d.client.R().Get(rawURL)
 	if err != nil {
 		logger.Printf("[ERROR] Failed to fetch URL: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer response.Body.Close()
+
+	isIPBlocked, reason := d.isStatusCodeOK(response)
+	if isIPBlocked {
+		logger.Printf("[WARNING] BLOCKED : %s\n", reason)
+	}
 
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
@@ -169,8 +192,8 @@ func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]str
 	}
 
 	var links []string
-	document.Find(imgPageTag).Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("src")
+	document.Find(tag.listImageURL).Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr(tag.attrImage)
 		if exists {
 			links = append(links, href)
 		}
@@ -259,7 +282,13 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(opts.maxProcessing)
 
-	allLink, err := c.getAllChapterLinks(*opts, "ul li span.lchx a")
+	attr := supportedWebsite(opts.urlRaw)
+	if attr == nil {
+		logger.Println("[ERROR] HTML attribut not found or Website unsupported")
+		os.Exit(1)
+	}
+
+	allLink, err := c.getAllChapterLinks(*opts, *attr)
 	if err != nil {
 		logger.Printf("[ERROR] Error fetching links: %v\n", err)
 		os.Exit(1)
@@ -292,8 +321,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 				return nil
 			}
 
-			logger.Printf("[INFO] Processing chapter %s\n", titleStr)
-			imgFromPage, err := c.getLinkFromPage(rawURL, "div#chimg-auh img")
+			imgFromPage, err := c.getLinkFromPage(rawURL, *attr)
 			if err != nil || len(imgFromPage) == 0 {
 				logger.Printf("[ERROR] Error fetching page links: %v\n", err)
 				return fmt.Errorf("error fetching page links: %w", err)
@@ -314,9 +342,8 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			}
 
 			comicFile := newPDFComicImage()
-			for i, imgURL := range imgFromPage {
+			for _, imgURL := range imgFromPage {
 				lowerCaseImgURL := strings.ToLower(imgURL)
-				logger.Printf("[DEBUG] Processing chapter %s image %d/%d: %s\n", titleStr, i+1, len(imgFromPage), imgURL)
 
 				ext, err := getImageExtensionFromURL(lowerCaseImgURL)
 				if err != nil {
@@ -387,10 +414,8 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 						return nil
 					}
 
-					logger.Printf("[INFO] Processing batch %s with %d images\n", title, len(items))
 					comicFile := newPDFComicImage()
-					for i, imgURL := range items {
-						logger.Printf("[DEBUG] Processing chapter %s batch image %d/%d\n", title, i+1, len(items))
+					for _, imgURL := range items {
 						lowerCaseImgURL := strings.ToLower(imgURL)
 
 						ext, err := getImageExtensionFromURL(lowerCaseImgURL)
@@ -442,7 +467,6 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 }
 
 func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]string {
-	logger.Printf("[DEBUG] Creating batches with size %d\n", batchSize)
 	var result []map[string][]string
 	for i := 0; i < len(data); i += batchSize {
 		end := min(i+batchSize, len(data))
