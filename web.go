@@ -16,14 +16,16 @@ type htmlTagAttr struct {
 }
 
 func supportedWebsite(rawURL string) *htmlTagAttr {
-	website, err := os.ReadFile("website.json")
+	configFile, err := os.ReadFile("config.json")
 	if err != nil {
 		logger.Printf("[ERROR] Failed to read configuration file: %v\n", err)
 		return nil
 	}
 
-	var sites []htmlTagAttr
-	if err := json.Unmarshal(website, &sites); err != nil {
+	var config struct {
+		Website []htmlTagAttr `json:"website"`
+	}
+	if err := json.Unmarshal(configFile, &config); err != nil {
 		logger.Printf("[ERROR] Failed to parse JSON configuration: %v\n", err)
 		return nil
 	}
@@ -35,7 +37,7 @@ func supportedWebsite(rawURL string) *htmlTagAttr {
 	}
 
 	host := parsedURL.Hostname()
-	for _, site := range sites {
+	for _, site := range config.Website {
 		if strings.EqualFold(host, site.Hostname) {
 			logger.Printf("[INFO] Found configuration for domain: %s\n", host)
 			return &site
