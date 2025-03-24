@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -159,11 +160,11 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	allLink, err := c.getAllChapterLinks(*opts, "ul li span.lchx a")
 	if err != nil {
 		fmt.Printf("Error fetching links: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	var generatedFiles []string
-	for _, al := range allLink {
+	for al := range slices.Values(allLink) {
 		al := al
 		g.Go(func() error {
 			outFile := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
@@ -177,7 +178,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			}
 
 			comicFile := newPDFComicImage()
-			for _, imgURL := range imgFromPage {
+			for imgURL := range slices.Values(imgFromPage) {
 				lowerCaseImgURL := strings.ToLower(imgURL)
 				if strings.Contains(lowerCaseImgURL, ".gif") {
 					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
@@ -218,7 +219,8 @@ type options struct {
 	url           string
 	maxProcessing int
 	isSingle      int
-	batchSize     int // New option for batch size
+
+	batchSize int // New option for batch size
 }
 
 func parseOptions() *options {
