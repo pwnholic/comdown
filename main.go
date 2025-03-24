@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path"
@@ -84,13 +85,12 @@ type requestTimeOut struct {
 }
 
 func newClientRequest(t *requestTimeOut) *clientRequest {
-	logger.Println("[INFO] Initializing HTTP client with retry configuration")
 	client := resty.New().
 		SetRetryCount(t.retryCount).
 		SetRetryWaitTime(t.retryWaitTime*time.Second).
 		SetRetryMaxWaitTime(t.retryMaxWaitTime*time.Second).
 		SetTimeout(t.timeOut*time.Second).
-		SetHeader("User-Agent", randomUserAgent())
+		SetHeader("User-Agent", t.userAgent)
 
 	return &clientRequest{
 		client: client,
@@ -565,9 +565,10 @@ func main() {
 
 	timout := requestTimeOut{
 		retryCount:       5,
-		retryWaitTime:    5,  // second
-		retryMaxWaitTime: 5,  // second
-		timeOut:          10, // second
+		retryWaitTime:    5,                                      // second
+		retryMaxWaitTime: 5,                                      // second
+		timeOut:          10,                                     // second
+		userAgent:        userAgents[rand.Intn(len(userAgents))], // mostly website will block our request so i do this :))
 	}
 
 	opts := parseOptions()

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"math/rand"
+	"net/url"
 	"strings"
 )
 
@@ -12,18 +12,36 @@ type htmlTagAttr struct {
 	attrImage      string
 }
 
-func supportedWebsite(rawURL string) *htmlTagAttr {
-	sites := map[string]htmlTagAttr{
-		"komikindo2.com": {
-			listChapterURL: "ul li span.lchx a",
-			attrChapter:    "href",
-			listImageURL:   "div#chimg-auh img",
-			attrImage:      "src",
-		},
-	}
+// for exmaple the list of chapter like this :
+// <ul>
+// 	<li>
+// 		<span class="lchx">
+// 			<a href="https://komikindo2.com/eleceed-chapter-342/">Chapter
+// 				<chapter>342</chapter>
+// 			</a>
+// 		</span>
+// 	</li>
+// ...
+// ...
+// </ul>
 
+var sites = map[string]htmlTagAttr{
+	"komikindo2.com": {
+		listChapterURL: "ul li span.lchx a",
+		attrChapter:    "href",
+		listImageURL:   "div#chimg-auh img",
+		attrImage:      "src",
+	},
+}
+
+func supportedWebsite(rawURL string) *htmlTagAttr {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		logger.Printf("[ERROR] Failed to parse URL: %v\n", err)
+	}
+	host := parsed.Hostname()
 	for domain, attr := range sites {
-		if strings.Contains(rawURL, domain) {
+		if strings.EqualFold(host, domain) {
 			return &attr
 		}
 	}
@@ -36,8 +54,4 @@ var userAgents = []string{
 	"Mozilla/5.0 (Linux; Android 10; SM-G980F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
 	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
-}
-
-func randomUserAgent() string {
-	return userAgents[rand.Intn(len(userAgents))]
 }
