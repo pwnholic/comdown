@@ -167,8 +167,8 @@ func (d *clientRequest) getAllChapterLinks(opts options, tag htmlTagAttr) ([]str
 	}
 
 	var links []string
-	document.Find(tag.listChapterURL).Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr(tag.attrChapter)
+	document.Find(tag.ListChapterURL).Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr(tag.AttrChapter)
 		if exists {
 			result, err := completeURL(href, opts.urlRaw)
 			if err != nil {
@@ -223,8 +223,8 @@ func (d *clientRequest) getLinkFromPage(rawURL string, tag htmlTagAttr) ([]strin
 	}
 
 	var links []string
-	document.Find(tag.listImageURL).Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr(tag.attrImage)
+	document.Find(tag.ListImageURL).Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr(tag.AttrImage)
 		if exists {
 			links = append(links, href)
 		}
