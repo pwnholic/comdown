@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"image"
@@ -11,6 +12,8 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,15 +116,16 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 	}
 
 	if isRange && !isSingle {
-		return links[opts.minChapter-1 : opts.maxChapter], nil
+		links = links[opts.minChapter-1 : opts.maxChapter]
 	} else if isSingle && !isRange {
-		return links[opts.isSingle-1 : opts.isSingle], nil
+		links = links[opts.isSingle-1 : opts.isSingle]
 	}
+
 	return links, nil
 }
 
-func (d *clientRequest) getLinkFromPage(urlRaw, imgPageTag string) ([]string, error) {
-	response, err := d.client.R().Get(urlRaw)
+func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]string, error) {
+	response, err := d.client.R().Get(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -219,7 +223,7 @@ func isFileExists(filename string, cache *sync.Map) bool {
 }
 
 func (c *clientRequest) processChapters(opts *options, comicDir string) {
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(opts.maxProcessing)
 
 	allLink, err := c.getAllChapterLinks(*opts, "ul li span.lchx a")
@@ -232,20 +236,41 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		mu             sync.Mutex
 		generatedFiles []string
 		fileCache      sync.Map
+		batchLink      []map[int][]string
 	)
 
 	for _, al := range allLink {
-		al := al
+		rawURL := al
 		g.Go(func() error {
-			outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			titleStr := getChapterName(rawURL)
+			outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", titleStr))
 			if isFileExists(outputFilename, &fileCache) {
 				fmt.Printf("File already exists, skipping: %s\n", outputFilename)
 				return nil
 			}
 
-			imgFromPage, err := c.getLinkFromPage(al, "div#chimg-auh img")
+			imgFromPage, err := c.getLinkFromPage(rawURL, "div#chimg-auh img")
 			if err != nil || len(imgFromPage) == 0 {
 				return fmt.Errorf("error fetching page links: %w", err)
+			}
+
+			if opts.batchSize > 0 {
+				titleInt, err := strconv.Atoi(titleStr)
+				if err != nil {
+					return fmt.Errorf("could not convert title string to int: %w", err)
+				}
+				mu.Lock()
+				batchLink = append(batchLink, map[int][]string{
+					titleInt: imgFromPage,
+				})
+				mu.Unlock()
+				return nil
 			}
 
 			comicFile := newPDFComicImage()
@@ -280,6 +305,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			}
 
 			fmt.Printf("Saved to %s\n", outputFilename)
+
 			mu.Lock()
 			generatedFiles = append(generatedFiles, outputFilename)
 			mu.Unlock()
@@ -291,6 +317,119 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		fmt.Printf("Error processing chapters: %v\n", err)
 		os.Exit(1)
 	}
+
+	if opts.batchSize > 0 {
+		batches := iterateInBatches(sortMapsByKey(batchLink), opts.batchSize)
+
+		batchGroup, ctx := errgroup.WithContext(context.Background())
+		batchGroup.SetLimit(opts.maxProcessing)
+
+		for _, batch := range batches {
+			for title, items := range batch {
+				title := title
+				items := items
+
+				batchGroup.Go(func() error {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+					}
+
+					outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title))
+					if isFileExists(outputFilename, &fileCache) {
+						fmt.Printf("File already exists, skipping: %s\n", outputFilename)
+						return nil
+					}
+
+					comicFile := newPDFComicImage()
+					for _, imgURL := range items {
+						lowerCaseImgURL := strings.ToLower(imgURL)
+
+						ext, err := getImageExtensionFromURL(lowerCaseImgURL)
+						if err != nil {
+							fmt.Printf("Unsupported image format: %s, err: %v\n", lowerCaseImgURL, err)
+							continue
+						}
+
+						if strings.Contains(ext, "gif") {
+							fmt.Printf("WARNING: skipping gif %s\n", imgURL)
+							continue
+						}
+
+						imageData, err := c.fetchImage(imgURL, ext)
+						if err != nil {
+							fmt.Printf("Error fetching image: %v\n", err)
+							continue
+						}
+
+						if err := comicFile.addImage(imageData); err != nil {
+							fmt.Printf("Error adding image to PDF: %v\n", err)
+							continue
+						}
+					}
+
+					if err := comicFile.savePDF(outputFilename); err != nil {
+						return fmt.Errorf("error saving batch PDF: %w", err)
+					}
+
+					fmt.Printf("Saved to %s\n", outputFilename)
+
+					mu.Lock()
+					generatedFiles = append(generatedFiles, outputFilename)
+					mu.Unlock()
+					return nil
+				})
+			}
+		}
+
+		if err := batchGroup.Wait(); err != nil {
+			fmt.Printf("Error processing batches: %v\n", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func iterateInBatches(data []map[int][]string, batchSize int) []map[string][]string {
+	var result []map[string][]string
+	for i := 0; i < len(data); i += batchSize {
+		end := min(i+batchSize, len(data))
+		var batch []string
+		for _, m := range data[i:end] {
+			keys := make([]int, 0, len(m))
+			for k := range m {
+				keys = append(keys, k)
+			}
+			sort.Ints(keys)
+			for _, k := range keys {
+				batch = append(batch, m[k]...)
+			}
+		}
+		title := fmt.Sprintf("%d-%d", i, end-1)
+		result = append(result, map[string][]string{title: batch})
+	}
+	return result
+}
+
+func sortMapsByKey(maps []map[int][]string) []map[int][]string {
+	var sortedKeys []int
+	keyToMap := make(map[int]map[int][]string)
+
+	for _, m := range maps {
+		for k := range m {
+			if _, exists := keyToMap[k]; !exists {
+				sortedKeys = append(sortedKeys, k)
+				keyToMap[k] = m
+			}
+		}
+	}
+
+	sort.Ints(sortedKeys)
+	var sortedMaps []map[int][]string
+	for _, k := range sortedKeys {
+		sortedMaps = append(sortedMaps, keyToMap[k])
+	}
+	return sortedMaps
 }
 
 type options struct {
@@ -299,8 +438,7 @@ type options struct {
 	url           string
 	maxProcessing int
 	isSingle      int
-
-	batchSize int // New option for batch size
+	batchSize     int
 }
 
 func parseOptions() *options {
@@ -308,11 +446,9 @@ func parseOptions() *options {
 	isSingle := flag.Int("single", 0, "1 chapter to download")
 	maxChapter := flag.Int("max-ch", math.MaxInt, "Maximum chapter to download (inclusive)")
 	maxProcessing := flag.Int("x", 10, "Maximum number of concurrent workers")
+	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
 	url := flag.String("url", "", "Website URL")
 	help := flag.Bool("h", false, "Show help message")
-
-	// TODO: this feature not implement yet
-	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
 
 	flag.BoolVar(help, "help", false, "Show help message") // Alias for -h
 
