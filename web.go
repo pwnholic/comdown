@@ -38,6 +38,15 @@ var sites = map[string]htmlTagAttr{
 		listImageURL:   "div#Baca_Komik img",
 		attrImage:      "src",
 	},
+
+	// Ada anti scrapping pada web ini
+	// TODO: bypass that shitt
+	"apkomik.cc": {
+		listChapterURL: "ul li div.chbox div.eph-num a",
+		attrChapter:    "href",
+		listImageURL:   "div#readerarea img",
+		attrImage:      "src",
+	},
 }
 
 func supportedWebsite(rawURL string) *htmlTagAttr {
