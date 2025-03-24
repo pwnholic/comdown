@@ -91,6 +91,8 @@ func newClientRequest(t *requestTimeOut) *clientRequest {
 		SetTimeout(t.timeOut*time.Second).
 		SetHeader("User-Agent", t.userAgent)
 
+	defer client.Close()
+
 	return &clientRequest{
 		client: client,
 	}
@@ -652,7 +654,6 @@ func main() {
 
 	opts := parseOptions()
 	req := newClientRequest(&timout)
-	defer req.client.Close()
 
 	comicDir := "comic"
 	logger.Printf("[INFO] Creating comic directory: %s\n", comicDir)
