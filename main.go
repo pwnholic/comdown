@@ -30,9 +30,7 @@ import (
 	"resty.dev/v3"
 )
 
-var (
-	logger *log.Logger
-)
+var logger *log.Logger
 
 func init() {
 	logger = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
@@ -97,6 +95,7 @@ func newClientRequest(t *requestTimeOut) *clientRequest {
 		client: client,
 	}
 }
+
 func (c *clientRequest) isStatusCodeOK(resp *resty.Response) (bool, string) {
 	switch resp.StatusCode() {
 	case http.StatusTooManyRequests:
@@ -584,7 +583,7 @@ func parseOptions() *options {
 	flag.Parse()
 
 	if *help {
-		fmt.Println("Komik Downloader - Download manga chapters from supported websites")
+		fmt.Println("Comic Downloader - Download manga chapters from supported websites")
 		fmt.Println("Usage: `comdown -url <url>`")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
