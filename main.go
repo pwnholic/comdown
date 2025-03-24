@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/signintech/gopdf"
+	"golang.org/x/image/webp"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/sync/errgroup"
 	"resty.dev/v3"
@@ -56,12 +59,19 @@ type clientRequest struct {
 	client *resty.Client
 }
 
-func newClientRequest() *clientRequest {
+type requestTimeOut struct {
+	retryCount       int
+	retryWaitTime    time.Duration
+	retryMaxWaitTime time.Duration
+	timeOut          time.Duration
+}
+
+func newClientRequest(t *requestTimeOut) *clientRequest {
 	client := resty.New().
-		SetRetryCount(3).
-		SetRetryWaitTime(2 * time.Second).
-		SetRetryMaxWaitTime(5 * time.Second).
-		SetTimeout(5 * time.Second)
+		SetRetryCount(t.retryCount).
+		SetRetryWaitTime(t.retryWaitTime * time.Second).
+		SetRetryMaxWaitTime(t.retryMaxWaitTime * time.Second).
+		SetTimeout(t.timeOut * time.Second)
 
 	return &clientRequest{
 		client: client,
@@ -138,7 +148,7 @@ func (d *clientRequest) getLinkFromPage(urlRaw, imgPageTag string) ([]string, er
 	return links, nil
 }
 
-func (c *clientRequest) fetchImage(imgLink string) ([]byte, error) {
+func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
 	resp, err := c.client.R().Get(imgLink)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image: %w", err)
@@ -150,7 +160,50 @@ func (c *clientRequest) fetchImage(imgLink string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image data: %w", err)
 	}
+
+	contentType := resp.Header().Get("Content-Type")
+	if contentType == "image/webp" || ext == "webp" {
+		img, err := webp.Decode(buff)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode webp image: %w", err)
+		}
+
+		outputBuff := new(bytes.Buffer)
+		err = jpeg.Encode(outputBuff, img, &jpeg.Options{Quality: 100})
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode image: %w", err)
+		}
+
+		return outputBuff.Bytes(), nil
+	}
+
 	return buff.Bytes(), nil
+}
+
+func getImageExtensionFromURL(url string) (string, error) {
+	fileName := path.Base(url)
+	if fileName == "" {
+		return "", fmt.Errorf("invalid URL: no file name found")
+	}
+
+	ext := strings.ToLower(path.Ext(fileName))
+	if ext == "" {
+		return "", fmt.Errorf("no file extension found in URL")
+	}
+
+	ext = strings.TrimPrefix(ext, ".")
+
+	supportedExtensions := map[string]bool{
+		"jpg":  true,
+		"jpeg": true,
+		"png":  true,
+		"webp": true,
+		"gif":  true,
+	}
+	if !supportedExtensions[ext] {
+		return "", fmt.Errorf("unsupported image extension: %s", ext)
+	}
+	return ext, nil
 }
 
 func (c *clientRequest) processChapters(opts *options, comicDir string) {
@@ -167,7 +220,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	for al := range slices.Values(allLink) {
 		al := al
 		g.Go(func() error {
-			outFile := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
+			outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
 			imgFromPage, err := c.getLinkFromPage(al, "div#chimg-auh img")
 			if err != nil {
 				return fmt.Errorf("error fetching page links: %w", err)
@@ -180,12 +233,18 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			comicFile := newPDFComicImage()
 			for imgURL := range slices.Values(imgFromPage) {
 				lowerCaseImgURL := strings.ToLower(imgURL)
-				if strings.Contains(lowerCaseImgURL, ".gif") {
+
+				ext, err := getImageExtensionFromURL(lowerCaseImgURL)
+				if err != nil {
+					return fmt.Errorf("image unsuporrted from this link %s with err : %v", lowerCaseImgURL, err)
+				}
+
+				if strings.Contains(ext, "gif") {
 					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
 					continue
 				}
 
-				imageData, err := c.fetchImage(imgURL)
+				imageData, err := c.fetchImage(imgURL, ext)
 				if err != nil {
 					fmt.Printf("Error fetching image: %v\n", err)
 					continue
@@ -197,12 +256,12 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 				}
 			}
 
-			if err := comicFile.savePDF(outFile); err != nil {
+			if err := comicFile.savePDF(outputFilename); err != nil {
 				return fmt.Errorf("error saving PDF: %w", err)
 			}
 
-			fmt.Printf("saved to %s\n", outFile)
-			generatedFiles = append(generatedFiles, outFile)
+			fmt.Printf("saved to %s\n", outputFilename)
+			generatedFiles = append(generatedFiles, outputFilename)
 			return nil
 		})
 	}
@@ -290,8 +349,15 @@ func main() {
 		flag.PrintDefaults()
 	}
 
+	timout := requestTimeOut{
+		retryCount:       3,
+		retryWaitTime:    2, // second
+		retryMaxWaitTime: 5, // second
+		timeOut:          5, // second
+	}
+
 	opts := parseOptions()
-	req := newClientRequest()
+	req := newClientRequest(&timout)
 	defer req.client.Close()
 
 	comicDir := "comic"
@@ -301,4 +367,5 @@ func main() {
 	}
 
 	req.processChapters(opts, comicDir)
+
 }
