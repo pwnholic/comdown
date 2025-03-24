@@ -4,7 +4,7 @@ go 1.24.1
 
 require github.com/signintech/gopdf v0.31.0
 
-require github.com/disintegration/imaging v1.6.2 // indirect
+require github.com/disintegration/imaging v1.6.2
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.2
@@ -14,6 +14,6 @@ require (
 	golang.org/x/image v0.25.0
 	golang.org/x/net v0.37.0
 	golang.org/x/sync v0.12.0
-	golang.org/x/text v0.23.0
+	golang.org/x/text v0.23.0 // indirect
 	resty.dev/v3 v3.0.0-beta.2
 )
