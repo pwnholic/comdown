@@ -367,5 +367,4 @@ func main() {
 	}
 
 	req.processChapters(opts, comicDir)
-
 }
