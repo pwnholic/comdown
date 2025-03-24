@@ -34,4 +34,4 @@ Examples:
 
 # Website Support
 
-You can add new one by your self or see this [See this](./website.json)
+You can add new one by your self or see this [See this](./config.json)
