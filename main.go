@@ -85,7 +85,7 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 	isRange := opts.minChapter > 0 && opts.maxChapter >= opts.minChapter
 	isSingle := opts.isSingle != 0
 
-	response, err := d.client.R().Get(opts.url)
+	response, err := d.client.R().Get(opts.urlRaw)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -319,7 +319,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	}
 
 	if opts.batchSize > 0 {
-		batches := iterateInBatches(sortMapsByKey(batchLink), opts.batchSize)
+		batches := iterateMapInBatch(sortMapsByKey(batchLink), opts.batchSize)
 
 		batchGroup, ctx := errgroup.WithContext(context.Background())
 		batchGroup.SetLimit(opts.maxProcessing)
@@ -390,7 +390,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	}
 }
 
-func iterateInBatches(data []map[int][]string, batchSize int) []map[string][]string {
+func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]string {
 	var result []map[string][]string
 	for i := 0; i < len(data); i += batchSize {
 		end := min(i+batchSize, len(data))
@@ -435,7 +435,7 @@ func sortMapsByKey(maps []map[int][]string) []map[int][]string {
 type options struct {
 	minChapter    int
 	maxChapter    int
-	url           string
+	urlRaw        string
 	maxProcessing int
 	isSingle      int
 	batchSize     int
@@ -447,7 +447,7 @@ func parseOptions() *options {
 	maxChapter := flag.Int("max-ch", math.MaxInt, "Maximum chapter to download (inclusive)")
 	maxProcessing := flag.Int("x", 10, "Maximum number of concurrent workers")
 	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
-	url := flag.String("url", "", "Website URL")
+	urlRaw := flag.String("url", "", "Website URL")
 	help := flag.Bool("h", false, "Show help message")
 
 	flag.BoolVar(help, "help", false, "Show help message") // Alias for -h
@@ -483,7 +483,7 @@ func parseOptions() *options {
 	return &options{
 		maxChapter:    *maxChapter,
 		minChapter:    *minChapter,
-		url:           *url,
+		urlRaw:        *urlRaw,
 		maxProcessing: *maxProcessing,
 		isSingle:      *isSingle,
 		batchSize:     *batchSize,
