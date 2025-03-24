@@ -32,4 +32,4 @@ Examples:
 
 # Website Support
 
-You can add new one by your self or see this [See this](./web.g#L29)
+You can add new one by your self or see this [See this](./web.go#L29)
