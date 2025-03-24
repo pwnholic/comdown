@@ -370,6 +370,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		generatedFiles []string
 		fileCache      sync.Map
 		batchLink      []map[int][]string
+		totalImages    int // Counter for total images
 	)
 
 	logger.Printf("[INFO] Processing %d chapters\n", len(allLink))
@@ -397,6 +398,10 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 				logger.Printf("[ERROR] Error fetching page links: %v\n", err)
 				return fmt.Errorf("error fetching page links: %w", err)
 			}
+
+			mu.Lock()
+			totalImages += len(imgFromPage)
+			mu.Unlock()
 
 			if opts.batchSize > 0 {
 				titleInt, err := strconv.Atoi(titleStr)
@@ -535,6 +540,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 
 	logger.Printf("[SUMMARY] Processed %d chapters in %v\n", len(allLink), time.Since(startTime))
 	logger.Printf("[SUMMARY] Generated %d PDF files\n", len(generatedFiles))
+	logger.Printf("[SUMMARY] Processed %d images in total\n", totalImages)
 }
 
 func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]string {
