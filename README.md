@@ -32,4 +32,4 @@ Examples:
 
 # Website Support
 
-You can add new one by your self or see this [See this](https://github.com/pwnholic/comdown/blob/e174efc9e2cd14f6f563ee5a67d4dc0de7afd5cf/web.go#L29)
+You can add new one by your self or see this [See this](./web.g#L29)
