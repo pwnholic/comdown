@@ -633,7 +633,7 @@ func parseOptions() *options {
 }
 
 func getChapterName(urlRaw string) string {
-	re := regexp.MustCompile(`chapter-(\d+)`)
+	re := regexp.MustCompile(`chapter-(\d+(?:\.\d+)?)`)
 	matches := re.FindStringSubmatch(urlRaw)
 	if len(matches) > 1 {
 		return matches[1]
