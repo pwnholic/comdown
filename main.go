@@ -585,7 +585,7 @@ func parseOptions() *options {
 
 	if *help {
 		fmt.Println("Komik Downloader - Download manga chapters from supported websites")
-		fmt.Println("Usage:")
+		fmt.Println("Usage: `comdown -url <url>`")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
 		fmt.Println("  Download single chapter: -url <URL> -single 42 -enhance")
