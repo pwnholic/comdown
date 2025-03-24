@@ -369,7 +369,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		mu             sync.Mutex
 		generatedFiles []string
 		fileCache      sync.Map
-		batchLink      []map[int][]string
+		batchLink      []map[float64][]string
 		totalImages    int // Counter for total images
 	)
 
@@ -404,14 +404,14 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			mu.Unlock()
 
 			if opts.batchSize > 0 {
-				titleInt, err := strconv.Atoi(titleStr)
+				titleFloat, err := strconv.ParseFloat(titleStr, 64) // 64-bit float
 				if err != nil {
-					logger.Printf("[ERROR] Could not convert title string to int: %v\n", err)
-					return fmt.Errorf("could not convert title string to int: %w", err)
+					logger.Printf("[ERROR] Could not convert title string to float: %v\n", err)
+					return fmt.Errorf("could not convert title string to float: %w", err)
 				}
 				mu.Lock()
-				batchLink = append(batchLink, map[int][]string{
-					titleInt: imgFromPage,
+				batchLink = append(batchLink, map[float64][]string{
+					titleFloat: imgFromPage,
 				})
 				mu.Unlock()
 				return nil
@@ -543,25 +543,47 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	logger.Printf("[SUMMARY] Processed %d images in total\n", totalImages)
 }
 
-func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]string {
-	var result []map[string][]string
-	for i := 0; i < len(data); i += batchSize {
-		end := min(i+batchSize, len(data))
-		var batch []string
-		for _, m := range data[i:end] {
-			keys := make([]int, 0, len(m))
-			for k := range m {
-				keys = append(keys, k)
-			}
-			sort.Ints(keys)
-			for _, k := range keys {
-				batch = append(batch, m[k]...)
-			}
-		}
-		title := fmt.Sprintf("%d-%d", i, end-1)
-		result = append(result, map[string][]string{title: batch})
+func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string][]string {
+	type chapter struct {
+		num    float64
+		images []string
 	}
-	return result
+	var chapters []chapter
+
+	for _, m := range data {
+		for num, imgs := range m {
+			chapters = append(chapters, chapter{num, imgs})
+		}
+	}
+
+	sort.Slice(chapters, func(i, j int) bool {
+		return chapters[i].num < chapters[j].num
+	})
+
+	var batches []map[string][]string
+
+	for i := 0; i < len(chapters); i += batchSize {
+		end := min(i+batchSize, len(chapters))
+
+		batch := chapters[i:end]
+		var images []string
+		startNum := batch[0].num
+		endNum := batch[len(batch)-1].num
+
+		title := fmt.Sprintf("%g", startNum)
+		if startNum != endNum {
+			title = fmt.Sprintf("%g-%g", startNum, endNum)
+		}
+
+		title = strings.ReplaceAll(title, ".0", "")
+		title = strings.ReplaceAll(title, "-.0", "-")
+
+		for _, ch := range batch {
+			images = append(images, ch.images...)
+		}
+		batches = append(batches, map[string][]string{title: images})
+	}
+	return batches
 }
 
 type options struct {
@@ -633,9 +655,13 @@ func parseOptions() *options {
 }
 
 func getChapterName(urlRaw string) string {
-	re := regexp.MustCompile(`chapter-(\d+(?:\.\d+)?)`)
+	re := regexp.MustCompile(`chapter-(\d+)(?:-(\d+))?/`)
 	matches := re.FindStringSubmatch(urlRaw)
-	if len(matches) > 1 {
+
+	if len(matches) >= 2 {
+		if len(matches) >= 3 && matches[2] != "" {
+			return matches[1] + "." + matches[2]
+		}
 		return matches[1]
 	}
 	return urlRaw
