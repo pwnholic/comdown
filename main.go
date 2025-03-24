@@ -319,7 +319,8 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	}
 
 	if opts.batchSize > 0 {
-		batches := iterateMapInBatch(batchLink, opts.batchSize)
+		batchSize := len(allLink) / opts.batchSize
+		batches := iterateMapInBatch(batchLink, batchSize)
 
 		batchGroup, ctx := errgroup.WithContext(context.Background())
 		batchGroup.SetLimit(opts.maxProcessing)
@@ -428,7 +429,6 @@ func parseOptions() *options {
 	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
 	urlRaw := flag.String("url", "", "Website URL")
 	help := flag.Bool("h", false, "Show help message")
-
 	flag.BoolVar(help, "help", false, "Show help message") // Alias for -h
 
 	flag.Parse()
