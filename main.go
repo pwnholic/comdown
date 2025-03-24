@@ -319,7 +319,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	}
 
 	if opts.batchSize > 0 {
-		batches := iterateMapInBatch(sortMapsByKey(batchLink), opts.batchSize)
+		batches := iterateMapInBatch(batchLink, opts.batchSize)
 
 		batchGroup, ctx := errgroup.WithContext(context.Background())
 		batchGroup.SetLimit(opts.maxProcessing)
@@ -409,27 +409,6 @@ func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]st
 		result = append(result, map[string][]string{title: batch})
 	}
 	return result
-}
-
-func sortMapsByKey(maps []map[int][]string) []map[int][]string {
-	var sortedKeys []int
-	keyToMap := make(map[int]map[int][]string)
-
-	for _, m := range maps {
-		for k := range m {
-			if _, exists := keyToMap[k]; !exists {
-				sortedKeys = append(sortedKeys, k)
-				keyToMap[k] = m
-			}
-		}
-	}
-
-	sort.Ints(sortedKeys)
-	var sortedMaps []map[int][]string
-	for _, k := range sortedKeys {
-		sortedMaps = append(sortedMaps, keyToMap[k])
-	}
-	return sortedMaps
 }
 
 type options struct {
