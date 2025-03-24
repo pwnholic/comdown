@@ -12,7 +12,7 @@ type htmlTagAttr struct {
 	attrImage      string
 }
 
-// for exmaple the list of chapter like this :
+// for exmaple the list of chapter something like this :
 // <ul>
 // 	<li>
 // 		<span class="lchx">
