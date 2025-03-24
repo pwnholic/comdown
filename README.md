@@ -26,9 +26,9 @@ Usage: `comdown -url <url>`
 
 Examples:
 
-- Download single chapter: -url <URL> -single 42 -enhance
-- Download range with enhancement: -url <URL> -min-ch 10 -max-ch 20 -enhance
-- Batch output without enhancement: -url <URL> -min-ch 1 -max-ch 50 -batch 10
+- Download single chapter: ` -url <URL> -single 42 -enhance`
+- Download range with enhancement: `-url <URL> -min-ch 10 -max-ch 20 -enhance`
+- Batch output without enhancement: ` -url <URL> -min-ch 1 -max-ch 50 -batch 10`
 
 # Website Support
 
