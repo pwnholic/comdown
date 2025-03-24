@@ -152,6 +152,66 @@ func (c *clientRequest) fetchImage(imgLink string) ([]byte, error) {
 	return buff.Bytes(), nil
 }
 
+func (c *clientRequest) processChapters(opts *options, comicDir string) {
+	g := new(errgroup.Group)
+	g.SetLimit(opts.maxProcessing)
+
+	allLink, err := c.getAllChapterLinks(*opts, "ul li span.lchx a")
+	if err != nil {
+		fmt.Printf("Error fetching links: %v\n", err)
+		return
+	}
+
+	var generatedFiles []string
+	for _, al := range allLink {
+		al := al
+		g.Go(func() error {
+			outFile := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
+			imgFromPage, err := c.getLinkFromPage(al, "div#chimg-auh img")
+			if err != nil {
+				return fmt.Errorf("error fetching page links: %w", err)
+			}
+
+			if len(imgFromPage) < 1 {
+				return fmt.Errorf("error to get page links: %v", err)
+			}
+
+			comicFile := newPDFComicImage()
+			for _, imgURL := range imgFromPage {
+				lowerCaseImgURL := strings.ToLower(imgURL)
+				if strings.Contains(lowerCaseImgURL, ".gif") {
+					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
+					continue
+				}
+
+				imageData, err := c.fetchImage(imgURL)
+				if err != nil {
+					fmt.Printf("Error fetching image: %v\n", err)
+					continue
+				}
+
+				if err := comicFile.addImage(imageData); err != nil {
+					fmt.Printf("Error adding image to PDF: %v\n", err)
+					continue
+				}
+			}
+
+			if err := comicFile.savePDF(outFile); err != nil {
+				return fmt.Errorf("error saving PDF: %w", err)
+			}
+
+			fmt.Printf("saved to %s\n", outFile)
+			generatedFiles = append(generatedFiles, outFile)
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		fmt.Printf("Error processing chapters: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 type options struct {
 	minChapter    int
 	maxChapter    int
@@ -169,7 +229,7 @@ func parseOptions() *options {
 	url := flag.String("url", "", "Website URL")
 	help := flag.Bool("h", false, "Show help message")
 
-	// TODO: implement this stuff
+	// TODO: this feature not implement yet
 	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
 
 	flag.BoolVar(help, "help", false, "Show help message") // Alias for -h
@@ -221,96 +281,22 @@ func getChapterName(urlRaw string) string {
 	return urlRaw
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [options] <url>\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "Options:")
-	flag.PrintDefaults()
-}
+func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] <url>\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "Options:")
+		flag.PrintDefaults()
+	}
 
-func createComicDirectory() string {
+	opts := parseOptions()
+	req := newClientRequest()
+	defer req.client.Close()
+
 	comicDir := "comic"
 	if err := os.MkdirAll(comicDir, os.ModePerm); err != nil {
 		fmt.Printf("Error creating comic directory: %v\n", err)
 		os.Exit(1)
 	}
-	return comicDir
-}
 
-// REFACTOR: split this
-func getAllChapterLinks(req *clientRequest, opts *options, htmlTagListLink string) ([]string, error) {
-	allLink, err := req.getAllChapterLinks(*opts, htmlTagListLink)
-	if err != nil {
-		return nil, fmt.Errorf("error getting chapter links: %w", err)
-	}
-	return allLink, nil
-}
-
-func processChapters(req *clientRequest, opts *options, comicDir string, allLink []string) {
-	g := new(errgroup.Group)
-	g.SetLimit(opts.maxProcessing)
-
-	var generatedFiles []string
-	for _, al := range allLink {
-		al := al
-		g.Go(func() error {
-			outFile := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", getChapterName(al)))
-			imgFromPage, err := req.getLinkFromPage(al, "div#chimg-auh img")
-			if err != nil {
-				return fmt.Errorf("error fetching page links: %w", err)
-			}
-
-			if len(imgFromPage) < 1 {
-				return fmt.Errorf("error to get page links: %v", err)
-			}
-
-			comicFile := newPDFComicImage()
-			for _, imgURL := range imgFromPage {
-				lowerCaseImgURL := strings.ToLower(imgURL)
-				if strings.Contains(lowerCaseImgURL, ".gif") {
-					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
-					continue
-				}
-
-				imageData, err := req.fetchImage(imgURL)
-				if err != nil {
-					fmt.Printf("Error fetching image: %v\n", err)
-					continue
-				}
-
-				if err := comicFile.addImage(imageData); err != nil {
-					fmt.Printf("Error adding image to PDF: %v\n", err)
-					continue
-				}
-			}
-
-			if err := comicFile.savePDF(outFile); err != nil {
-				return fmt.Errorf("error saving PDF: %w", err)
-			}
-
-			fmt.Printf("saved to %s\n", outFile)
-			generatedFiles = append(generatedFiles, outFile)
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		fmt.Printf("Error processing chapters: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func main() {
-	flag.Usage = usage
-	opts := parseOptions()
-	req := newClientRequest()
-	defer req.client.Close()
-
-	comicDir := createComicDirectory()
-	allLink, err := getAllChapterLinks(req, opts, "ul li span.lchx a")
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	processChapters(req, opts, comicDir, allLink)
+	req.processChapters(opts, comicDir)
 }
