@@ -1,8 +1,8 @@
 # Usage
 
 - ./comdown -url <url>
-- Help ./comdown -h
+- Help ./comdown -help
 
 # Website Support
 
-- [https://komikindo2.com/](https://komikindo2.com/)
+- [See this](./web.go)

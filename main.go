@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/jpeg"
 	"log"
-	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -497,41 +496,51 @@ type options struct {
 }
 
 func parseOptions() *options {
-	minChapter := flag.Int("min-ch", 0, "Minimum chapter to download (inclusive)")
-	isSingle := flag.Int("single", 0, "1 chapter to download")
-	maxChapter := flag.Int("max-ch", math.MaxInt, "Maximum chapter to download (inclusive)")
-	maxProcessing := flag.Int("x", 10, "Maximum number of concurrent workers")
-	batchSize := flag.Int("batch", 0, "Number of PDFs to merge into one file (0 to disable)")
-	urlRaw := flag.String("url", "", "Website URL")
-	help := flag.Bool("h", false, "Show help message")
-	flag.BoolVar(help, "help", false, "Show help message") // Alias for -h
+	help := flag.Bool("h", false, "Display this help message and exit")
+	flag.BoolVar(help, "help", false, "Alias for -h")
+
+	urlRaw := flag.String("url", "", `Target website URL (e.g. "https://komikindo.id/one-piece-chapter-1")`)
+	minChapter := flag.Int("min-ch", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
+	maxChapter := flag.Int("max-ch", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
+	isSingle := flag.Int("single", 0, `[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set`)
+	maxProcessing := flag.Int("x", 10, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
+	batchSize := flag.Int("batch", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
 
 	flag.Parse()
 
 	if *help {
-		flag.Usage()
+		fmt.Println("Komik Downloader - Download manga chapters from supported websites")
+		fmt.Println("Usage:")
+		flag.PrintDefaults()
+		fmt.Println("\nExamples:")
+		fmt.Println("  Download single chapter: -url <URL> -single 42")
+		fmt.Println("  Download range: -url <URL> -min-ch 10 -max-ch 20")
+		fmt.Println("  Batch output: -url <URL> -min-ch 1 -max-ch 50 -batch 10")
 		os.Exit(0)
 	}
 
-	if *minChapter > *maxChapter {
-		logger.Println("[ERROR] min-ch must be less than or equal to max-ch")
-		flag.Usage()
-		os.Exit(1)
+	if *urlRaw == "" {
+		logger.Fatal("[ERROR] URL is required. Use -url flag")
 	}
-	if *minChapter < 0 {
-		logger.Println("[ERROR] min-ch must be greater than or equal to 0")
-		flag.Usage()
-		os.Exit(1)
+
+	if *isSingle == 0 && *minChapter == 0 && *maxChapter == 0 {
+		logger.Fatal("[ERROR] Must specify either -single or -min-ch/-max-ch")
 	}
-	if *maxProcessing <= 0 {
-		logger.Println("[ERROR] maxProcessing must be greater than 0")
-		flag.Usage()
-		os.Exit(1)
+
+	if *isSingle > 0 && (*minChapter > 0 || *maxChapter > 0) {
+		logger.Println("[WARNING] -single takes precedence over range flags")
 	}
+
+	if *minChapter > *maxChapter && *isSingle == 0 {
+		logger.Fatal("[ERROR] min-ch must be <= max-ch")
+	}
+
+	if *maxProcessing < 1 {
+		logger.Fatal("[ERROR] Concurrency value (-x) must be >= 1")
+	}
+
 	if *batchSize < 0 {
-		logger.Println("[ERROR] batch size must be greater than or equal to 0")
-		flag.Usage()
-		os.Exit(1)
+		logger.Fatal("[ERROR] Batch size must be >= 0 (0 disables batching)")
 	}
 
 	return &options{
@@ -555,12 +564,11 @@ func getChapterName(urlRaw string) string {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [options] <url>\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "Usage: comdown -url <url>")
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
 	}
 
-	logger.Println("[INFO] Starting comic downloader")
 	startTime := time.Now()
 
 	timout := requestTimeOut{
