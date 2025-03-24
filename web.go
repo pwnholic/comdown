@@ -32,6 +32,12 @@ var sites = map[string]htmlTagAttr{
 		listImageURL:   "div#chimg-auh img",
 		attrImage:      "src",
 	},
+	"komiku.id": {
+		listChapterURL: "tbody tr td.judulseries a",
+		attrChapter:    "href",
+		listImageURL:   "div#Baca_Komik img",
+		attrImage:      "src",
+	},
 }
 
 func supportedWebsite(rawURL string) *htmlTagAttr {

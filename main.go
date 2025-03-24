@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/disintegration/imaging"
 	"github.com/signintech/gopdf"
 	"golang.org/x/image/webp"
 	"golang.org/x/net/html/charset"
@@ -109,6 +111,31 @@ func (c *clientRequest) isStatusCodeOK(resp *resty.Response) (bool, string) {
 	return false, "IP not blocked"
 }
 
+func completeURL(inputURL, defaultHost string) (string, error) {
+	if inputURL == "" {
+		return "", fmt.Errorf("URL cannot be empty")
+	}
+	parsedURL, err := url.Parse(inputURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL: %w", err)
+	}
+	if parsedURL.IsAbs() {
+		return inputURL, nil
+	}
+	if defaultHost == "" {
+		return "", fmt.Errorf("host need for relative url: %w", err)
+	}
+	defaultURL, err := url.Parse(defaultHost)
+	if err != nil {
+		return "", fmt.Errorf("invalid default host: %v", err)
+	}
+	if defaultURL.Scheme == "" {
+		defaultURL.Scheme = "https"
+	}
+	resultURL := defaultURL.ResolveReference(parsedURL)
+	return resultURL.String(), nil
+}
+
 func (d *clientRequest) getAllChapterLinks(opts options, tag htmlTagAttr) ([]string, error) {
 	isRange := opts.minChapter > 0 && opts.maxChapter >= opts.minChapter
 	isSingle := opts.isSingle != 0
@@ -142,7 +169,11 @@ func (d *clientRequest) getAllChapterLinks(opts options, tag htmlTagAttr) ([]str
 	document.Find(tag.listChapterURL).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr(tag.attrChapter)
 		if exists {
-			links = append(links, href)
+			result, err := completeURL(href, opts.urlRaw)
+			if err != nil {
+				logger.Fatalf("[ERROR] Failed to add hostname : %v\n", err)
+			}
+			links = append(links, result)
 		}
 	})
 
@@ -201,7 +232,7 @@ func (d *clientRequest) getLinkFromPage(rawURL string, tag htmlTagAttr) ([]strin
 	return links, nil
 }
 
-func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
+func (c *clientRequest) fetchImage(imgLink, ext string, enhance bool) ([]byte, error) {
 	resp, err := c.client.R().Get(imgLink)
 	if err != nil {
 		logger.Printf("[ERROR] Failed to fetch image: %v\n", err)
@@ -217,6 +248,25 @@ func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
 	}
 
 	contentType := resp.Header().Get("Content-Type")
+	enhanceImage := func(imgBytes []byte) ([]byte, error) {
+		img, err := imaging.Decode(bytes.NewReader(imgBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode image for enhancement: %w", err)
+		}
+
+		img = imaging.Resize(img, img.Bounds().Dx()*2, img.Bounds().Dy()*2, imaging.Lanczos)
+		img = imaging.Sharpen(img, 0.7)
+		img = imaging.AdjustContrast(img, 10)
+
+		outBuff := new(bytes.Buffer)
+		err = jpeg.Encode(outBuff, img, &jpeg.Options{Quality: 100})
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode enhanced image: %w", err)
+		}
+
+		return outBuff.Bytes(), nil
+	}
+
 	if contentType == "image/webp" || ext == "webp" {
 		logger.Println("[INFO] Processing WEBP image conversion")
 		img, err := webp.Decode(buff)
@@ -232,9 +282,30 @@ func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
 			return nil, fmt.Errorf("failed to encode image: %w", err)
 		}
 
+		if enhance {
+			enhanced, err := enhanceImage(outputBuff.Bytes())
+			if err != nil {
+				logger.Printf("[WARNING] Failed to enhance image: %v\n", err)
+				return outputBuff.Bytes(), nil
+			}
+			logger.Println("[INFO] WEBP to JPEG conversion with enhancement completed")
+			return enhanced, nil
+		}
+
 		logger.Println("[INFO] WEBP to JPEG conversion completed")
 		return outputBuff.Bytes(), nil
 	}
+
+	if enhance {
+		enhanced, err := enhanceImage(buff.Bytes())
+		if err != nil {
+			logger.Printf("[WARNING] Failed to enhance image: %v\n", err)
+			return buff.Bytes(), nil
+		}
+		logger.Println("[INFO] Image enhancement completed")
+		return enhanced, nil
+	}
+
 	return buff.Bytes(), nil
 }
 
@@ -355,7 +426,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 					continue
 				}
 
-				imageData, err := c.fetchImage(imgURL, ext)
+				imageData, err := c.fetchImage(imgURL, ext, opts.enhanceImage)
 				if err != nil {
 					logger.Printf("[ERROR] Error fetching image: %v\n", err)
 					continue
@@ -428,7 +499,7 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 							continue
 						}
 
-						imageData, err := c.fetchImage(imgURL, ext)
+						imageData, err := c.fetchImage(imgURL, ext, opts.enhanceImage)
 						if err != nil {
 							logger.Printf("[ERROR] Error fetching image: %v\n", err)
 							continue
@@ -493,6 +564,7 @@ type options struct {
 	maxProcessing int
 	isSingle      int
 	batchSize     int
+	enhanceImage  bool
 }
 
 func parseOptions() *options {
@@ -506,6 +578,9 @@ func parseOptions() *options {
 	maxProcessing := flag.Int("x", 10, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
 	batchSize := flag.Int("batch", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
 
+	// TODO: made this more faster
+	enhance := flag.Bool("enhance", false, `[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)`)
+
 	flag.Parse()
 
 	if *help {
@@ -513,18 +588,14 @@ func parseOptions() *options {
 		fmt.Println("Usage:")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
-		fmt.Println("  Download single chapter: -url <URL> -single 42")
-		fmt.Println("  Download range: -url <URL> -min-ch 10 -max-ch 20")
-		fmt.Println("  Batch output: -url <URL> -min-ch 1 -max-ch 50 -batch 10")
+		fmt.Println("  Download single chapter: -url <URL> -single 42 -enhance")
+		fmt.Println("  Download range with enhancement: -url <URL> -min-ch 10 -max-ch 20 -enhance")
+		fmt.Println("  Batch output without enhancement: -url <URL> -min-ch 1 -max-ch 50 -batch 10")
 		os.Exit(0)
 	}
 
 	if *urlRaw == "" {
 		logger.Fatal("[ERROR] URL is required. Use -url flag")
-	}
-
-	if *isSingle == 0 && *minChapter == 0 && *maxChapter == 0 {
-		logger.Fatal("[ERROR] Must specify either -single or -min-ch/-max-ch")
 	}
 
 	if *isSingle > 0 && (*minChapter > 0 || *maxChapter > 0) {
@@ -550,6 +621,7 @@ func parseOptions() *options {
 		maxProcessing: *maxProcessing,
 		isSingle:      *isSingle,
 		batchSize:     *batchSize,
+		enhanceImage:  *enhance,
 	}
 }
 

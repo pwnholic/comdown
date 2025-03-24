@@ -4,6 +4,8 @@ go 1.24.1
 
 require github.com/signintech/gopdf v0.31.0
 
+require github.com/disintegration/imaging v1.6.2 // indirect
+
 require (
 	github.com/PuerkitoBio/goquery v1.10.2
 	github.com/andybalholm/cascadia v1.3.3 // indirect
