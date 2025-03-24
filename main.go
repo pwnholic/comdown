@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"log"
 	"math"
 	"os"
 	"path"
@@ -26,11 +27,20 @@ import (
 	"resty.dev/v3"
 )
 
+var (
+	logger *log.Logger
+)
+
+func init() {
+	logger = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
+}
+
 type pdfComicImage struct {
 	pdf *gopdf.GoPdf
 }
 
 func newPDFComicImage() *pdfComicImage {
+	logger.Println("[INFO] Creating new PDF document")
 	pdf := gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{Unit: gopdf.UnitPT, PageSize: *gopdf.PageSizeA4})
 	return &pdfComicImage{pdf: &pdf}
@@ -39,11 +49,13 @@ func newPDFComicImage() *pdfComicImage {
 func (c *pdfComicImage) addImage(imageData []byte) error {
 	imageHolder, err := gopdf.ImageHolderByBytes(imageData)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to create image holder: %v\n", err)
 		return fmt.Errorf("failed to create image holder: %w", err)
 	}
 
 	imageConfig, _, err := image.DecodeConfig(bytes.NewReader(imageData))
 	if err != nil {
+		logger.Printf("[ERROR] Failed to decode image config: %v\n", err)
 		return fmt.Errorf("failed to decode image config: %w", err)
 	}
 
@@ -55,6 +67,7 @@ func (c *pdfComicImage) addImage(imageData []byte) error {
 }
 
 func (c *pdfComicImage) savePDF(outputPath string) error {
+	logger.Printf("[INFO] Saving PDF to: %s\n", outputPath)
 	return c.pdf.WritePdf(outputPath)
 }
 
@@ -70,6 +83,7 @@ type requestTimeOut struct {
 }
 
 func newClientRequest(t *requestTimeOut) *clientRequest {
+	logger.Println("[INFO] Initializing HTTP client with retry configuration")
 	client := resty.New().
 		SetRetryCount(t.retryCount).
 		SetRetryWaitTime(t.retryWaitTime * time.Second).
@@ -85,8 +99,10 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 	isRange := opts.minChapter > 0 && opts.maxChapter >= opts.minChapter
 	isSingle := opts.isSingle != 0
 
+	logger.Printf("[INFO] Fetching chapter links from: %s\n", opts.urlRaw)
 	response, err := d.client.R().Get(opts.urlRaw)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to fetch URL: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer response.Body.Close()
@@ -94,11 +110,13 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to create charset reader: %v\n", err)
 		return nil, fmt.Errorf("failed to create charset reader: %w", err)
 	}
 
 	document, err := goquery.NewDocumentFromReader(bodyReader)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to parse HTML document: %v\n", err)
 		return nil, fmt.Errorf("failed to parse HTML document: %w", err)
 	}
 
@@ -110,23 +128,29 @@ func (d *clientRequest) getAllChapterLinks(opts options, htmlTag string) ([]stri
 		}
 	})
 
+	logger.Printf("[DEBUG] Found %d chapter links\n", len(links))
+
 	// Reverse links
 	for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
 		links[i], links[j] = links[j], links[i]
 	}
 
 	if isRange && !isSingle {
+		logger.Printf("[INFO] Filtering chapters range %d-%d\n", opts.minChapter, opts.maxChapter)
 		links = links[opts.minChapter-1 : opts.maxChapter]
 	} else if isSingle && !isRange {
+		logger.Printf("[INFO] Selecting single chapter %d\n", opts.isSingle)
 		links = links[opts.isSingle-1 : opts.isSingle]
 	}
 
+	logger.Printf("[INFO] Returning %d chapters to process\n", len(links))
 	return links, nil
 }
 
 func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]string, error) {
 	response, err := d.client.R().Get(rawURL)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to fetch URL: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer response.Body.Close()
@@ -134,11 +158,13 @@ func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]str
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to create charset reader: %v\n", err)
 		return nil, fmt.Errorf("failed to create charset reader: %w", err)
 	}
 
 	document, err := goquery.NewDocumentFromReader(bodyReader)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to parse HTML document: %v\n", err)
 		return nil, fmt.Errorf("failed to parse HTML document: %w", err)
 	}
 
@@ -149,12 +175,14 @@ func (d *clientRequest) getLinkFromPage(rawURL string, imgPageTag string) ([]str
 			links = append(links, href)
 		}
 	})
+	logger.Printf("[INFO] Found %d images on page %s\n", len(links), rawURL)
 	return links, nil
 }
 
 func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
 	resp, err := c.client.R().Get(imgLink)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to fetch image: %v\n", err)
 		return nil, fmt.Errorf("failed to fetch image: %w", err)
 	}
 	defer resp.Body.Close()
@@ -162,25 +190,27 @@ func (c *clientRequest) fetchImage(imgLink, ext string) ([]byte, error) {
 	buff := new(bytes.Buffer)
 	_, err = buff.ReadFrom(resp.Body)
 	if err != nil {
+		logger.Printf("[ERROR] Failed to read image data: %v\n", err)
 		return nil, fmt.Errorf("failed to read image data: %w", err)
 	}
 
 	contentType := resp.Header().Get("Content-Type")
 	if contentType == "image/webp" || ext == "webp" {
-		fmt.Println("Decoding webp image...")
+		logger.Println("[INFO] Processing WEBP image conversion")
 		img, err := webp.Decode(buff)
 		if err != nil {
+			logger.Printf("[ERROR] Failed to decode webp image: %v\n", err)
 			return nil, fmt.Errorf("failed to decode webp image: %w", err)
 		}
 
-		fmt.Println("Encoding webp image to jpeg...")
 		outputBuff := new(bytes.Buffer)
 		err = jpeg.Encode(outputBuff, img, &jpeg.Options{Quality: 100})
 		if err != nil {
+			logger.Printf("[ERROR] Failed to encode image: %v\n", err)
 			return nil, fmt.Errorf("failed to encode image: %w", err)
 		}
 
-		fmt.Println("Webp image encoding completed.")
+		logger.Println("[INFO] WEBP to JPEG conversion completed")
 		return outputBuff.Bytes(), nil
 	}
 	return buff.Bytes(), nil
@@ -223,12 +253,15 @@ func isFileExists(filename string, cache *sync.Map) bool {
 }
 
 func (c *clientRequest) processChapters(opts *options, comicDir string) {
+	startTime := time.Now()
+	logger.Printf("[INFO] Starting chapter processing with %d max workers\n", opts.maxProcessing)
+
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(opts.maxProcessing)
 
 	allLink, err := c.getAllChapterLinks(*opts, "ul li span.lchx a")
 	if err != nil {
-		fmt.Printf("Error fetching links: %v\n", err)
+		logger.Printf("[ERROR] Error fetching links: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -239,30 +272,37 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		batchLink      []map[int][]string
 	)
 
+	logger.Printf("[INFO] Processing %d chapters\n", len(allLink))
+
 	for _, al := range allLink {
 		rawURL := al
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
+				logger.Printf("[WARNING] Context cancelled for chapter: %s\n", rawURL)
 				return ctx.Err()
 			default:
 			}
 
 			titleStr := getChapterName(rawURL)
 			outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", titleStr))
+
 			if isFileExists(outputFilename, &fileCache) {
-				fmt.Printf("File already exists, skipping: %s\n", outputFilename)
+				logger.Printf("[INFO] File already exists, skipping: %s\n", outputFilename)
 				return nil
 			}
 
+			logger.Printf("[INFO] Processing chapter %s\n", titleStr)
 			imgFromPage, err := c.getLinkFromPage(rawURL, "div#chimg-auh img")
 			if err != nil || len(imgFromPage) == 0 {
+				logger.Printf("[ERROR] Error fetching page links: %v\n", err)
 				return fmt.Errorf("error fetching page links: %w", err)
 			}
 
 			if opts.batchSize > 0 {
 				titleInt, err := strconv.Atoi(titleStr)
 				if err != nil {
+					logger.Printf("[ERROR] Could not convert title string to int: %v\n", err)
 					return fmt.Errorf("could not convert title string to int: %w", err)
 				}
 				mu.Lock()
@@ -274,37 +314,39 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 			}
 
 			comicFile := newPDFComicImage()
-			for _, imgURL := range imgFromPage {
+			for i, imgURL := range imgFromPage {
 				lowerCaseImgURL := strings.ToLower(imgURL)
+				logger.Printf("[DEBUG] Processing chapter %s image %d/%d: %s\n", titleStr, i+1, len(imgFromPage), imgURL)
 
 				ext, err := getImageExtensionFromURL(lowerCaseImgURL)
 				if err != nil {
-					fmt.Printf("Unsupported image format: %s, err: %v\n", lowerCaseImgURL, err)
+					logger.Printf("[WARNING] Unsupported image format: %s, err: %v\n", lowerCaseImgURL, err)
 					continue
 				}
 
 				if strings.Contains(ext, "gif") {
-					fmt.Printf("WARNING: skipping gif %s\n", imgURL)
+					logger.Printf("[WARNING] Skipping gif %s\n", imgURL)
 					continue
 				}
 
 				imageData, err := c.fetchImage(imgURL, ext)
 				if err != nil {
-					fmt.Printf("Error fetching image: %v\n", err)
+					logger.Printf("[ERROR] Error fetching image: %v\n", err)
 					continue
 				}
 
 				if err := comicFile.addImage(imageData); err != nil {
-					fmt.Printf("Error adding image to PDF: %v\n", err)
+					logger.Printf("[ERROR] Error adding image to PDF: %v\n", err)
 					continue
 				}
 			}
 
 			if err := comicFile.savePDF(outputFilename); err != nil {
+				logger.Printf("[ERROR] Error saving PDF: %v\n", err)
 				return fmt.Errorf("error saving PDF: %w", err)
 			}
 
-			fmt.Printf("Saved to %s\n", outputFilename)
+			logger.Printf("[SUCCESS] Saved to %s\n", outputFilename)
 
 			mu.Lock()
 			generatedFiles = append(generatedFiles, outputFilename)
@@ -314,11 +356,12 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 	}
 
 	if err := g.Wait(); err != nil {
-		fmt.Printf("Error processing chapters: %v\n", err)
+		logger.Printf("[ERROR] Error processing chapters: %v\n", err)
 		os.Exit(1)
 	}
 
 	if opts.batchSize > 0 {
+		logger.Printf("[INFO] Starting batch processing with size %d\n", opts.batchSize)
 		batchSize := len(allLink) / opts.batchSize
 		batches := iterateMapInBatch(batchLink, batchSize)
 
@@ -333,48 +376,52 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 				batchGroup.Go(func() error {
 					select {
 					case <-ctx.Done():
+						logger.Printf("[WARNING] Context cancelled for batch: %s\n", title)
 						return ctx.Err()
 					default:
 					}
 
 					outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title))
 					if isFileExists(outputFilename, &fileCache) {
-						fmt.Printf("File already exists, skipping: %s\n", outputFilename)
+						logger.Printf("[INFO] Batch file already exists, skipping: %s\n", outputFilename)
 						return nil
 					}
 
+					logger.Printf("[INFO] Processing batch %s with %d images\n", title, len(items))
 					comicFile := newPDFComicImage()
-					for _, imgURL := range items {
+					for i, imgURL := range items {
+						logger.Printf("[DEBUG] Processing chapter %s batch image %d/%d\n", title, i+1, len(items))
 						lowerCaseImgURL := strings.ToLower(imgURL)
 
 						ext, err := getImageExtensionFromURL(lowerCaseImgURL)
 						if err != nil {
-							fmt.Printf("Unsupported image format: %s, err: %v\n", lowerCaseImgURL, err)
+							logger.Printf("[WARNING] Unsupported image format: %s, err: %v\n", lowerCaseImgURL, err)
 							continue
 						}
 
 						if strings.Contains(ext, "gif") {
-							fmt.Printf("WARNING: skipping gif %s\n", imgURL)
+							logger.Printf("[WARNING] Skipping gif %s\n", imgURL)
 							continue
 						}
 
 						imageData, err := c.fetchImage(imgURL, ext)
 						if err != nil {
-							fmt.Printf("Error fetching image: %v\n", err)
+							logger.Printf("[ERROR] Error fetching image: %v\n", err)
 							continue
 						}
 
 						if err := comicFile.addImage(imageData); err != nil {
-							fmt.Printf("Error adding image to PDF: %v\n", err)
+							logger.Printf("[ERROR] Error adding image to PDF: %v\n", err)
 							continue
 						}
 					}
 
 					if err := comicFile.savePDF(outputFilename); err != nil {
+						logger.Printf("[ERROR] Error saving batch PDF: %v\n", err)
 						return fmt.Errorf("error saving batch PDF: %w", err)
 					}
 
-					fmt.Printf("Saved to %s\n", outputFilename)
+					logger.Printf("[SUCCESS] Saved batch to %s\n", outputFilename)
 
 					mu.Lock()
 					generatedFiles = append(generatedFiles, outputFilename)
@@ -385,13 +432,17 @@ func (c *clientRequest) processChapters(opts *options, comicDir string) {
 		}
 
 		if err := batchGroup.Wait(); err != nil {
-			fmt.Printf("Error processing batches: %v\n", err)
+			logger.Printf("[ERROR] Error processing batches: %v\n", err)
 			os.Exit(1)
 		}
 	}
+
+	logger.Printf("[SUMMARY] Processed %d chapters in %v\n", len(allLink), time.Since(startTime))
+	logger.Printf("[SUMMARY] Generated %d PDF files\n", len(generatedFiles))
 }
 
 func iterateMapInBatch(data []map[int][]string, batchSize int) []map[string][]string {
+	logger.Printf("[DEBUG] Creating batches with size %d\n", batchSize)
 	var result []map[string][]string
 	for i := 0; i < len(data); i += batchSize {
 		end := min(i+batchSize, len(data))
@@ -439,22 +490,22 @@ func parseOptions() *options {
 	}
 
 	if *minChapter > *maxChapter {
-		fmt.Println("Error: min-ch must be less than or equal to max-ch")
+		logger.Println("[ERROR] min-ch must be less than or equal to max-ch")
 		flag.Usage()
 		os.Exit(1)
 	}
 	if *minChapter < 0 {
-		fmt.Println("Error: min-ch must be greater than or equal to 0")
+		logger.Println("[ERROR] min-ch must be greater than or equal to 0")
 		flag.Usage()
 		os.Exit(1)
 	}
 	if *maxProcessing <= 0 {
-		fmt.Println("Error: maxProcessing must be greater than 0")
+		logger.Println("[ERROR] maxProcessing must be greater than 0")
 		flag.Usage()
 		os.Exit(1)
 	}
 	if *batchSize < 0 {
-		fmt.Println("Error: batch size must be greater than or equal to 0")
+		logger.Println("[ERROR] batch size must be greater than or equal to 0")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -485,6 +536,9 @@ func main() {
 		flag.PrintDefaults()
 	}
 
+	logger.Println("[INFO] Starting comic downloader")
+	startTime := time.Now()
+
 	timout := requestTimeOut{
 		retryCount:       5,
 		retryWaitTime:    5,  // second
@@ -497,10 +551,12 @@ func main() {
 	defer req.client.Close()
 
 	comicDir := "comic"
+	logger.Printf("[INFO] Creating comic directory: %s\n", comicDir)
 	if err := os.MkdirAll(comicDir, os.ModePerm); err != nil {
-		fmt.Printf("Error creating comic directory: %v\n", err)
+		logger.Printf("[ERROR] Error creating comic directory: %v\n", err)
 		os.Exit(1)
 	}
 
 	req.processChapters(opts, comicDir)
+	logger.Printf("[SUCCESS] Program completed in %v\n", time.Since(startTime))
 }
