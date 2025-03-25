@@ -21,7 +21,7 @@ Usage: `comdown -url <url>`
   -single int
     	[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set
   -url string
-    	Target website URL (e.g. "https://komikindo.id/one-piece-chapter-1")
+    	Target website URL (e.g. "https://komikindo.id/one-piece-list")
   -x int
     	Maximum active goroutine (default: 10). Higher values may get rate-limited (default 10)
 ```
