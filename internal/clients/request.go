@@ -1,13 +1,17 @@
 package clients
 
 import (
+	"bytes"
 	"fmt"
+	"image/jpeg"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	logger "github.com/pwnholic/comdown/internal"
+	"github.com/disintegration/imaging"
+	"github.com/pwnholic/comdown/internal"
+	"golang.org/x/image/webp"
 	"golang.org/x/net/html/charset"
 	"resty.dev/v3"
 )
@@ -37,6 +41,14 @@ func NewClientRequest(t *HTTPClientOptions) *clientRequest {
 	return &clientRequest{
 		Client: client,
 	}
+}
+
+var UserAgents = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
+	"Mozilla/5.0 (Linux; Android 10; SM-G980F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
+	"Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
 }
 
 func statusCode(resp *resty.Response) (bool, string) {
@@ -84,26 +96,26 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 
 	response, err := c.Client.R().Get(metadata.RawURL)
 	if err != nil {
-		logger.Error("Failed to fetch URL: %sn", err.Error())
+		internal.ErrorLog("Failed to fetch URL: %sn", err.Error())
 		return nil, err
 	}
 	defer response.Body.Close()
 
 	isIPBlocked, reason := statusCode(response)
 	if isIPBlocked {
-		logger.Warn("BLOCKERD: %s", reason)
+		internal.WarningLog("BLOCKERD: %s", reason)
 	}
 
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
 	if err != nil {
-		logger.Error("Failed to create charset reader: %s\n", err.Error())
+		internal.ErrorLog("Failed to create charset reader: %s\n", err.Error())
 		return nil, err
 	}
 
 	document, err := goquery.NewDocumentFromReader(bodyReader)
 	if err != nil {
-		logger.Error("Failed to parse HTML document: %s\n", err.Error())
+		internal.ErrorLog("Failed to parse HTML document: %s\n", err.Error())
 		return nil, err
 	}
 
@@ -113,14 +125,14 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 		if exists {
 			result, err := completeURL(href, metadata.RawURL)
 			if err != nil {
-				logger.Error("Failed to add hostname :%s", err.Error())
+				internal.ErrorLog("Failed to add hostname :%s", err.Error())
 				return
 			}
 			links = append(links, result)
 		}
 	})
 
-	logger.Debug("Found %d chapter links\n", len(links))
+	internal.DebugLog("Found %d chapter links\n", len(links))
 
 	// Reverse links
 	for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
@@ -128,38 +140,39 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 	}
 
 	if isRange && !isSingle {
-		logger.Info("Filtering chapters range %d-%d\n", metadata.MinChapter, metadata.MaxChapter)
+		internal.InfoLog("Filtering chapters range %d-%d\n", metadata.MinChapter, metadata.MaxChapter)
 		links = links[metadata.MinChapter-1 : metadata.MaxChapter]
 	} else if isSingle && !isRange {
-		logger.Info("Selecting single chapter %d\n", metadata.IsSingle)
+		internal.InfoLog("Selecting single chapter %d\n", metadata.IsSingle)
 		links = links[metadata.IsSingle-1 : metadata.IsSingle]
 	}
 	return links, nil
 }
 
+// Just need URL and attr
 func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, error) {
 	response, err := c.Client.R().Get(metadata.RawURL)
 	if err != nil {
-		logger.Error("Failed to fetch URL: %v\n", err.Error())
+		internal.ErrorLog("Failed to fetch URL: %v\n", err.Error())
 		return nil, err
 	}
 	defer response.Body.Close()
 
 	isIPBlocked, reason := statusCode(response)
 	if isIPBlocked {
-		logger.Warn("BLOCKED : %s\n", reason)
+		internal.WarningLog("BLOCKED : %s\n", reason)
 	}
 
 	contentType := response.Header().Get("Content-Type")
 	bodyReader, err := charset.NewReader(response.Body, contentType)
 	if err != nil {
-		logger.Error("Failed to create charset reader: %s\n", err.Error())
+		internal.ErrorLog("Failed to create charset reader: %s\n", err.Error())
 		return nil, err
 	}
 
 	document, err := goquery.NewDocumentFromReader(bodyReader)
 	if err != nil {
-		logger.Error("Failed to parse HTML document: %v\n", err.Error())
+		internal.ErrorLog("Failed to parse HTML document: %v\n", err.Error())
 		return nil, err
 	}
 
@@ -170,7 +183,85 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 			links = append(links, href)
 		}
 	})
-	logger.Info("Found %d images on page %s\n", len(links), metadata.RawURL)
-	return links, nil
 
+	internal.InfoLog("Found %d images on page %s\n", len(links), metadata.RawURL)
+	return links, nil
+}
+
+func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, error) {
+	resp, err := c.Client.R().Get(imgLink)
+	if err != nil {
+		internal.ErrorLog("Failed to fetch image: %s\n", err.Error())
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	buff := new(bytes.Buffer)
+	_, err = buff.ReadFrom(resp.Body)
+	if err != nil {
+		internal.ErrorLog("Failed to read image data: %s\n", err.Error())
+		return nil, err
+	}
+
+	contentType := resp.Header().Get("Content-Type")
+	enhanceImage := func(imgBytes []byte) ([]byte, error) {
+		img, err := imaging.Decode(bytes.NewReader(imgBytes))
+		if err != nil {
+			internal.ErrorLog("Failed to decode image for enhancement: %s", err.Error())
+			return nil, err
+		}
+
+		img = imaging.Resize(img, img.Bounds().Dx()*2, img.Bounds().Dy()*2, imaging.Lanczos)
+		img = imaging.Sharpen(img, 0.7)
+		img = imaging.AdjustContrast(img, 10)
+
+		outBuff := new(bytes.Buffer)
+		err = jpeg.Encode(outBuff, img, &jpeg.Options{Quality: 100})
+		if err != nil {
+			internal.ErrorLog("Failed to encode enhanced image: %s", err.Error())
+			return nil, err
+		}
+
+		return outBuff.Bytes(), nil
+	}
+
+	if contentType == "image/webp" || ext == "webp" {
+		internal.InfoLog("Processing WEBP image conversion")
+		img, err := webp.Decode(buff)
+		if err != nil {
+			internal.ErrorLog("Failed to decode webp image: %s\n", err.Error())
+			return nil, err
+		}
+
+		outputBuff := new(bytes.Buffer)
+		err = jpeg.Encode(outputBuff, img, &jpeg.Options{Quality: 100})
+		if err != nil {
+			internal.ErrorLog("Failed to encode image: %s\n", err.Error())
+			return nil, err
+		}
+
+		if enhance {
+			enhanced, err := enhanceImage(outputBuff.Bytes())
+			if err != nil {
+				internal.WarningLog("Failed to enhance image: %s\n", err.Error())
+				return outputBuff.Bytes(), nil
+			}
+			internal.InfoLog("WEBP to JPEG conversion with enhancement completed")
+			return enhanced, nil
+		}
+
+		internal.InfoLog("WEBP to JPEG conversion completed")
+		return outputBuff.Bytes(), nil
+	}
+
+	if enhance {
+		enhanced, err := enhanceImage(buff.Bytes())
+		if err != nil {
+			internal.WarningLog("Failed to enhance image: %s\n", err.Error())
+			return buff.Bytes(), nil
+		}
+		internal.InfoLog("Image enhancement completed")
+		return enhanced, nil
+	}
+	return buff.Bytes(), nil
 }

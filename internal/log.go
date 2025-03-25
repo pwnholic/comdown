@@ -68,7 +68,7 @@ func (l *Logger) logInternal(level LogLevel, levelStr, format string, v ...any) 
 
 	timestamp := time.Now().Format(time.DateTime)
 	msg := fmt.Sprintf(format, v...)
-	logEntry := fmt.Sprintf("%s [%s] %s\n", timestamp, levelStr, msg)
+	logEntry := fmt.Sprintf("%s [%s] %s", timestamp, levelStr, msg)
 
 	_, _ = l.writer.Write([]byte(logEntry))
 }
@@ -93,22 +93,22 @@ func (l *Logger) Success(format string, v ...any) {
 	l.logInternal(SUCCESS, "SUCCESS", format, v...)
 }
 
-func Debug(format string, v ...any) {
+func DebugLog(format string, v ...any) {
 	GetDefaultLogger().Debug(format, v...)
 }
 
-func Info(format string, v ...any) {
+func InfoLog(format string, v ...any) {
 	GetDefaultLogger().Info(format, v...)
 }
 
-func Warn(format string, v ...any) {
+func WarningLog(format string, v ...any) {
 	GetDefaultLogger().Warn(format, v...)
 }
 
-func Error(format string, v ...any) {
+func ErrorLog(format string, v ...any) {
 	GetDefaultLogger().Error(format, v...)
 }
 
-func Success(format string, v ...any) {
+func SuccessLog(format string, v ...any) {
 	GetDefaultLogger().Success(format, v...)
 }

@@ -1,14 +1,14 @@
 package exports
 
-type documentExporter struct {
+type DocumentExporter struct {
 	PDF interface {
 		AddImageToPDF(imgBytes []byte) error
 		SavePDF(outputPath string) error
 	}
 }
 
-func NewDocumentExporter() *documentExporter {
-	return &documentExporter{
+func NewDocumentExporter() *DocumentExporter {
+	return &DocumentExporter{
 		PDF: NewPDFGenerator(),
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"image"
 
-	logger "github.com/pwnholic/comdown/internal"
+	"github.com/pwnholic/comdown/internal"
 	"github.com/signintech/gopdf"
 )
 
@@ -24,13 +24,13 @@ func NewPDFGenerator() *pdfGenerator {
 func (p *pdfGenerator) AddImageToPDF(imgBytes []byte) error {
 	imageHolder, err := gopdf.ImageHolderByBytes(imgBytes)
 	if err != nil {
-		logger.Error("Failed to create image holder: %s", err.Error())
+		internal.ErrorLog("Failed to create image holder: %s", err.Error())
 		return err
 	}
 
 	imageConfig, _, err := image.DecodeConfig(bytes.NewReader(imgBytes))
 	if err != nil {
-		logger.Error("Failed to decode image config: %s", err.Error())
+		internal.ErrorLog("Failed to decode image config: %s", err.Error())
 		return err
 	}
 
@@ -42,6 +42,6 @@ func (p *pdfGenerator) AddImageToPDF(imgBytes []byte) error {
 }
 
 func (p *pdfGenerator) SavePDF(outputPath string) error {
-	logger.Info("Saving PDF to: %s", outputPath)
+	internal.InfoLog("Saving PDF to: %s", outputPath)
 	return p.PDF.WritePdf(outputPath)
 }
