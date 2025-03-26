@@ -4,7 +4,7 @@ Komik Downloader - Download manga chapters from supported websites
 
 Build : `go build -mod=vendor -o comdown cmd/*.go`
 
-Usage: `comdown -url <url>`
+Usage: `./comdown -url <url>`
 
 ```
   -batch int
