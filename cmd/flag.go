@@ -12,7 +12,7 @@ type Flag struct {
 	MaxChapter    int
 	MinChapter    int
 	RawURL        string
-	IsSingle      int
+	Single        int
 	MaxConcurrent int
 	BatchSize     int
 	EnhanceImage  bool
@@ -75,7 +75,7 @@ func parseFlag() *Flag {
 		MinChapter:    *minChapter,
 		RawURL:        *rawURL,
 		MaxConcurrent: *maxConcurrent,
-		IsSingle:      *isSingle,
+		Single:        *isSingle,
 		BatchSize:     *batchSize,
 		EnhanceImage:  *enhance,
 	}

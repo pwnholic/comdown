@@ -92,7 +92,7 @@ func completeURL(inputURL, defaultHost string) (string, error) {
 
 func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) {
 	isRange := metadata.MinChapter > 0 && metadata.MaxChapter >= metadata.MinChapter
-	isSingle := metadata.IsSingle != 0
+	isSingle := metadata.Single != 0
 
 	response, err := c.Client.R().Get(metadata.RawURL)
 	if err != nil {
@@ -143,8 +143,8 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 		internal.InfoLog("Filtering chapters range %d-%d\n", metadata.MinChapter, metadata.MaxChapter)
 		links = links[metadata.MinChapter-1 : metadata.MaxChapter]
 	} else if isSingle && !isRange {
-		internal.InfoLog("Selecting single chapter %d\n", metadata.IsSingle)
-		links = links[metadata.IsSingle-1 : metadata.IsSingle]
+		internal.InfoLog("Selecting single chapter %d\n", metadata.Single)
+		links = links[metadata.Single-1 : metadata.Single]
 	}
 	return links, nil
 }

@@ -47,7 +47,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		MaxChapter:    flag.MaxChapter,
 		MinChapter:    flag.MaxChapter,
 		RawURL:        flag.RawURL,
-		IsSingle:      flag.IsSingle,
+		Single:        flag.Single,
 		ScraperConfig: *attr,
 	}
 
@@ -149,17 +149,17 @@ func (gp *generateProcess) processChapterImages(imgFromPage []string, outputFile
 		lowerCaseImgURL := strings.ToLower(imgURL)
 
 		ext := gp.clients.Website.GetImageExtension(lowerCaseImgURL)
-		if ext == "" {
+		if ext == nil {
 			internal.WarningLog("Unsupported image format: %s\n", lowerCaseImgURL)
 			continue
 		}
 
-		if strings.Contains(ext, "gif") {
+		if strings.Contains(*ext, "gif") {
 			internal.WarningLog("Skipping gif %s\n", imgURL)
 			continue
 		}
 
-		imageData, err := gp.clients.Request.CollectImage(imgURL, ext, flag.EnhanceImage)
+		imageData, err := gp.clients.Request.CollectImage(imgURL, *ext, flag.EnhanceImage)
 		if err != nil {
 			internal.ErrorLog("Error fetching image: %v\n", err.Error())
 			continue
