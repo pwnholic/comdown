@@ -33,6 +33,7 @@ func main() {
 		TimeOut:          10,
 		UserAgent:        clients.UserAgents[rand.Intn(len(clients.UserAgents))], // mostly website will block our request so i do this :))
 	}
+
 	process := NewGenerateProcess(t)
 
 	comicDir := "comic"

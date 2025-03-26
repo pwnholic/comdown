@@ -51,7 +51,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		ScraperConfig: *attr,
 	}
 
-	allLink, err := gp.clients.Request.CollectLinks(&comicMeta)
+	allLinks, err := gp.clients.Request.CollectLinks(&comicMeta)
 	if err != nil {
 		internal.ErrorLog("Error fetching links: %v\n", err)
 		os.Exit(1)
@@ -65,7 +65,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		totalImages    int
 	)
 
-	internal.InfoLog("Processing %d chapters\n", len(allLink))
+	internal.InfoLog("Processing %d chapters\n", len(allLinks))
 
 	isFileExists := func(filename string, cache *sync.Map) bool {
 		if val, ok := cache.Load(filename); ok {
@@ -77,8 +77,8 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		return exists
 	}
 
-	for _, al := range allLink {
-		rawURL := al
+	for _, url := range allLinks {
+		rawURL := url
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
@@ -139,7 +139,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		gp.processBatches(batchLink, comicDir, flag, &generatedFiles, &mu)
 	}
 
-	internal.InfoLog("[SUMMARY] Processed %d chapters in %v\n", len(allLink), time.Since(startTime))
+	internal.InfoLog("[SUMMARY] Processed %d chapters in %v\n", len(allLinks), time.Since(startTime))
 	internal.InfoLog("[SUMMARY] Generated %d PDF files\n", len(generatedFiles))
 	internal.InfoLog("[SUMMARY] Processed %d images in total\n", totalImages)
 }
@@ -192,8 +192,8 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 	var chapters []chapter
 
 	for _, m := range data {
-		for num, imgs := range m {
-			chapters = append(chapters, chapter{num, imgs})
+		for chapterNum, imageLink := range m {
+			chapters = append(chapters, chapter{chapterNum, imageLink})
 		}
 	}
 
