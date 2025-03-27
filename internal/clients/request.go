@@ -34,7 +34,7 @@ func NewClientRequest(t *HTTPClientOptions) *clientRequest {
 		SetRetryWaitTime(t.RetryWaitTime*time.Second).
 		SetRetryMaxWaitTime(t.RetryMaxWaitTime*time.Second).
 		AddRetryConditions(func(r *resty.Response, err error) bool {
-			return err != nil || (r != nil && r.StatusCode() >= 500)
+			return err != nil || (r != nil && r.StatusCode() >= http.StatusInternalServerError)
 		}).
 		AddRetryHooks(func(r *resty.Response, err error) {
 			if err != nil {
@@ -113,7 +113,7 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 
 	isIPBlocked, reason := statusCode(response)
 	if isIPBlocked {
-		internal.WarningLog("BLOCKERD: %s", reason)
+		internal.WarningLog("BLOCKED: %s", reason)
 	}
 
 	contentType := response.Header().Get("Content-Type")
