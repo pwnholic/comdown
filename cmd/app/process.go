@@ -197,7 +197,10 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 		}
 	}
 
-	sort.Slice(chapters, func(i, j int) bool { return chapters[i].num < chapters[j].num })
+	sort.Slice(chapters, func(i, j int) bool {
+		return chapters[i].num < chapters[j].num
+	})
+
 	var batches []map[string][]string
 
 	for i := 0; i < len(chapters); i += batchSize {
@@ -247,7 +250,6 @@ func (gp *generateProcess) processBatches(batchLink []map[float64][]string, comi
 			})
 		}
 	}
-
 	if err := batchGroup.Wait(); err != nil {
 		internal.ErrorLog("Error processing batches: %v\n", err)
 		os.Exit(1)

@@ -14,13 +14,6 @@
         "attr_image": "src"
     },
     {
-        "hostname": "id.shinigami.asia",
-        "list_chapter_url": "",
-        "attr_chapter": "",
-        "list_image_url": "",
-        "attr_image": ""
-    },
-    {
         "hostname": "komikcast02.com",
         "list_chapter_url": "ul.komik_info-chapters-wrapper li.komik_info-chapters-item a.chapter-link-item",
         "attr_chapter": "href",
