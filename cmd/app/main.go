@@ -30,7 +30,7 @@ func main() {
 		RetryCount:       5,
 		RetryWaitTime:    5,
 		RetryMaxWaitTime: 5,
-		TimeOut:          10,
+		Timeout:          10,
 		UserAgent:        clients.UserAgents[rand.Intn(len(clients.UserAgents))], // mostly website will block our request so i do this :))
 	}
 

@@ -24,29 +24,53 @@ type HTTPClientOptions struct {
 	RetryCount       int
 	RetryWaitTime    time.Duration
 	RetryMaxWaitTime time.Duration
-	TimeOut          time.Duration
+	Timeout          time.Duration
 	UserAgent        string
 }
 
 func NewClientRequest(t *HTTPClientOptions) *clientRequest {
+	if t == nil {
+		t = &HTTPClientOptions{
+			RetryCount:       3,
+			RetryWaitTime:    2,
+			RetryMaxWaitTime: 10,
+			Timeout:          30,
+			UserAgent:        "Mozilla/5.0 (compatible; Resty Client)",
+		}
+	}
+
+	if t.RetryCount < 0 {
+		t.RetryCount = 0
+	}
+	if t.RetryWaitTime <= 0 {
+		t.RetryWaitTime = 2
+	}
+	if t.RetryMaxWaitTime <= 0 {
+		t.RetryMaxWaitTime = 10
+	}
+	if t.Timeout <= 0 {
+		t.Timeout = 30
+	}
+	if t.UserAgent == "" {
+		t.UserAgent = "Mozilla/5.0 (compatible; Resty Client)"
+	}
+
 	client := resty.New().
 		SetRetryCount(t.RetryCount).
-		SetRetryWaitTime(t.RetryWaitTime*time.Second).
-		SetRetryMaxWaitTime(t.RetryMaxWaitTime*time.Second).
+		SetRetryWaitTime(time.Duration(t.RetryWaitTime)*time.Second).
+		SetRetryMaxWaitTime(time.Duration(t.RetryMaxWaitTime)*time.Second).
 		AddRetryConditions(func(r *resty.Response, err error) bool {
 			return err != nil || (r != nil && r.StatusCode() >= http.StatusInternalServerError)
 		}).
 		AddRetryHooks(func(r *resty.Response, err error) {
 			if err != nil {
-				internal.WarningLog("Retrying request due to error: %v (attempt %d)\n", err, r.Request.Attempt)
+				internal.WarningLog("Retrying request due to error: %v (attempt %d)", err, r.Request.Attempt)
 			} else if r != nil {
-				internal.WarningLog("Retrying request due to status code: %d (attempt %d)\n", r.StatusCode(), r.Request.Attempt)
+				internal.WarningLog("Retrying request due to status code: %d (attempt %d)", r.StatusCode(), r.Request.Attempt)
 			}
 		}).
 		SetHeader("User-Agent", t.UserAgent).
-		SetTimeout(t.TimeOut * time.Second)
-
-	defer client.Close()
+		SetTimeout(time.Duration(t.Timeout) * time.Second)
 
 	return &clientRequest{
 		Client: client,
