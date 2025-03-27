@@ -22,16 +22,16 @@ func main() {
 		flag.PrintDefaults()
 	}
 
+	startTime := time.Now()
 	customFlag := parseFlag()
 
-	startTime := time.Now()
-
+	userAgent := clients.UserAgents[rand.Intn(len(clients.UserAgents))] // mostly website will block our request so i do this :))
 	t := &clients.HTTPClientOptions{
 		RetryCount:       5,
 		RetryWaitTime:    5,
 		RetryMaxWaitTime: 5,
 		Timeout:          10,
-		UserAgent:        clients.UserAgents[rand.Intn(len(clients.UserAgents))], // mostly website will block our request so i do this :))
+		UserAgent:        userAgent,
 	}
 
 	process := NewGenerateProcess(t)
