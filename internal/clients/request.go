@@ -33,8 +33,18 @@ func NewClientRequest(t *HTTPClientOptions) *clientRequest {
 		SetRetryCount(t.RetryCount).
 		SetRetryWaitTime(t.RetryWaitTime*time.Second).
 		SetRetryMaxWaitTime(t.RetryMaxWaitTime*time.Second).
-		SetTimeout(t.TimeOut*time.Second).
-		SetHeader("User-Agent", t.UserAgent)
+		AddRetryConditions(func(r *resty.Response, err error) bool {
+			return err != nil || (r != nil && r.StatusCode() >= 500)
+		}).
+		AddRetryHooks(func(r *resty.Response, err error) {
+			if err != nil {
+				internal.WarningLog("Retrying request due to error: %v (attempt %d)\n", err, r.Request.Attempt)
+			} else if r != nil {
+				internal.WarningLog("Retrying request due to status code: %d (attempt %d)\n", r.StatusCode(), r.Request.Attempt)
+			}
+		}).
+		SetHeader("User-Agent", t.UserAgent).
+		SetTimeout(t.TimeOut * time.Second)
 
 	defer client.Close()
 
@@ -188,11 +198,12 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 	return links, nil
 }
 
-func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, error) {
+func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, string, error) {
 	resp, err := c.Client.R().Get(imgLink)
+
 	if err != nil {
-		internal.ErrorLog("Failed to fetch image: %s\n", err.Error())
-		return nil, err
+		internal.ErrorLog("Failed to fetch image after %d attempts: %s\n", resp.Request.Attempt, err.Error())
+		return nil, imgLink, fmt.Errorf("failed after %d attempts: %w", resp.Request.Attempt, err)
 	}
 	defer resp.Body.Close()
 
@@ -200,15 +211,15 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 	_, err = buff.ReadFrom(resp.Body)
 	if err != nil {
 		internal.ErrorLog("Failed to read image data: %s\n", err.Error())
-		return nil, err
+		return nil, imgLink, err
 	}
 
 	contentType := resp.Header().Get("Content-Type")
-	enhanceImage := func(imgBytes []byte) ([]byte, error) {
+	enhanceImage := func(imgBytes []byte) ([]byte, string, error) {
 		img, err := imaging.Decode(bytes.NewReader(imgBytes))
 		if err != nil {
 			internal.ErrorLog("Failed to decode image for enhancement: %s", err.Error())
-			return nil, err
+			return nil, imgLink, nil
 		}
 
 		img = imaging.Resize(img, img.Bounds().Dx()*2, img.Bounds().Dy()*2, imaging.Lanczos)
@@ -219,10 +230,10 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 		err = jpeg.Encode(outBuff, img, &jpeg.Options{Quality: 100})
 		if err != nil {
 			internal.ErrorLog("Failed to encode enhanced image: %s", err.Error())
-			return nil, err
+			return nil, imgLink, nil
 		}
 
-		return outBuff.Bytes(), nil
+		return outBuff.Bytes(), imgLink, nil
 	}
 
 	if contentType == "image/webp" || ext == "webp" {
@@ -230,38 +241,38 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 		img, err := webp.Decode(buff)
 		if err != nil {
 			internal.ErrorLog("Failed to decode webp image: %s\n", err.Error())
-			return nil, err
+			return nil, imgLink, nil
 		}
 
 		outputBuff := new(bytes.Buffer)
 		err = jpeg.Encode(outputBuff, img, &jpeg.Options{Quality: 100})
 		if err != nil {
 			internal.ErrorLog("Failed to encode image: %s\n", err.Error())
-			return nil, err
+			return nil, imgLink, nil
 		}
 
 		if enhance {
-			enhanced, err := enhanceImage(outputBuff.Bytes())
+			enhanced, imgLink, err := enhanceImage(outputBuff.Bytes())
 			if err != nil {
 				internal.WarningLog("Failed to enhance image: %s\n", err.Error())
-				return outputBuff.Bytes(), nil
+				return outputBuff.Bytes(), imgLink, nil
 			}
 			internal.InfoLog("WEBP to JPEG conversion with enhancement completed")
-			return enhanced, nil
+			return enhanced, imgLink, nil
 		}
 
 		internal.InfoLog("WEBP to JPEG conversion completed")
-		return outputBuff.Bytes(), nil
+		return outputBuff.Bytes(), imgLink, nil
 	}
 
 	if enhance {
-		enhanced, err := enhanceImage(buff.Bytes())
+		enhanced, imgLink, err := enhanceImage(buff.Bytes())
 		if err != nil {
 			internal.WarningLog("Failed to enhance image: %s\n", err.Error())
-			return buff.Bytes(), nil
+			return buff.Bytes(), imgLink, nil
 		}
 		internal.InfoLog("Image enhancement completed")
-		return enhanced, nil
+		return enhanced, imgLink, nil
 	}
-	return buff.Bytes(), nil
+	return buff.Bytes(), imgLink, nil
 }

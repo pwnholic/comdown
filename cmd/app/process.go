@@ -159,9 +159,9 @@ func (gp *generateProcess) processChapterImages(imgFromPage []string, outputFile
 			continue
 		}
 
-		imageData, err := gp.clients.Request.CollectImage(imgURL, *ext, flag.EnhanceImage)
+		imageData, imgLink, err := gp.clients.Request.CollectImage(imgURL, *ext, flag.EnhanceImage)
 		if err != nil {
-			internal.ErrorLog("Error fetching image: %v\n", err.Error())
+			internal.ErrorLog("Error fetching image link %s with eror: %s\n", imgLink, err.Error())
 			continue
 		}
 
