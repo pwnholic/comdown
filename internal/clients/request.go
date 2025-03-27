@@ -64,9 +64,9 @@ func NewClientRequest(t *HTTPClientOptions) *clientRequest {
 		}).
 		AddRetryHooks(func(r *resty.Response, err error) {
 			if err != nil {
-				internal.WarningLog("Retrying request due to error: %v (attempt %d)", err, r.Request.Attempt)
+				internal.WarningLog("Retrying request due to error: %v (attempt %d)\n", err, r.Request.Attempt)
 			} else if r != nil {
-				internal.WarningLog("Retrying request due to status code: %d (attempt %d)", r.StatusCode(), r.Request.Attempt)
+				internal.WarningLog("Retrying request due to status code: %d (attempt %d)\n", r.StatusCode(), r.Request.Attempt)
 			}
 		}).
 		SetHeader("User-Agent", t.UserAgent).
