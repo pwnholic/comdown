@@ -175,11 +175,12 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 
 	if isRange && !isSingle {
 		internal.InfoLog("Filtering chapters range %d-%d\n", metadata.MinChapter, metadata.MaxChapter)
-		links = links[metadata.MinChapter-1 : metadata.MaxChapter]
+		links = links[metadata.MinChapter : metadata.MaxChapter+1]
 	} else if isSingle && !isRange {
-		internal.InfoLog("Selecting single chapter %d\n", metadata.Single)
-		links = links[metadata.Single-1 : metadata.Single]
+		internal.InfoLog("Selecting single chapter %d\n", metadata.Single+1)
+		links = links[metadata.Single : metadata.Single+1]
 	}
+
 	return links, nil
 }
 
@@ -224,7 +225,6 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 
 func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, string, error) {
 	resp, err := c.Client.R().Get(imgLink)
-
 	if err != nil {
 		internal.ErrorLog("Failed to fetch image after %d attempts: %s\n", resp.Request.Attempt, err.Error())
 		return nil, imgLink, fmt.Errorf("failed after %d attempts: %w", resp.Request.Attempt, err)

@@ -144,7 +144,9 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 	internal.InfoLog("[SUMMARY] Processed %d images in total\n", totalImages)
 }
 
-func (gp *generateProcess) processChapterImages(imgFromPage []string, outputFilename string, generatedFiles *[]string, mu *sync.Mutex, flag *Flag) error {
+func (gp *generateProcess) processChapterImages(
+	imgFromPage []string, outputFilename string, generatedFiles *[]string, mu *sync.Mutex, flag *Flag,
+) error {
 	for _, imgURL := range imgFromPage {
 		lowerCaseImgURL := strings.ToLower(imgURL)
 

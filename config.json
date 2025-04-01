@@ -1,23 +1,30 @@
 [
-    {
-        "hostname": "komikindo2.com",
-        "list_chapter_url": "ul li span.lchx a",
-        "attr_chapter": "href",
-        "list_image_url": "div#chimg-auh img",
-        "attr_image": "src"
-    },
-    {
-        "hostname": "komiku.id",
-        "list_chapter_url": "tbody tr td.judulseries a",
-        "attr_chapter": "href",
-        "list_image_url": "div#baca_komik img",
-        "attr_image": "src"
-    },
-    {
-        "hostname": "komikcast02.com",
-        "list_chapter_url": "ul.komik_info-chapters-wrapper li.komik_info-chapters-item a.chapter-link-item",
-        "attr_chapter": "href",
-        "list_image_url": "div.main-reading-area img",
-        "attr_image": "src"
-    }
+  {
+    "hostname": "komikindo2.com",
+    "list_chapter_url": "ul li span.lchx a",
+    "attr_chapter": "href",
+    "list_image_url": "div#chimg-auh img",
+    "attr_image": "src"
+  },
+  {
+    "hostname": "komiku.id",
+    "list_chapter_url": "tbody tr td.judulseries a",
+    "attr_chapter": "href",
+    "list_image_url": "div#baca_komik img",
+    "attr_image": "src"
+  },
+  {
+    "hostname": "komikcast02.com",
+    "list_chapter_url": "ul.komik_info-chapters-wrapper li.komik_info-chapters-item a.chapter-link-item",
+    "attr_chapter": "href",
+    "list_image_url": "div.main-reading-area img",
+    "attr_image": "src"
+  },
+  {
+    "hostname": "manhwalite.com",
+    "list_chapter_url": "ul.version-chap li a",
+    "attr_chapter": "href",
+    "list_image_url": "div.reading-content img",
+    "attr_image": "src"
+  }
 ]
