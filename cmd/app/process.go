@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,7 +78,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 		return exists
 	}
 
-	for _, url := range allLinks {
+	for url := range slices.Values(allLinks) {
 		rawURL := url
 		g.Go(func() error {
 			select {
@@ -147,7 +148,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 func (gp *generateProcess) processChapterImages(
 	imgFromPage []string, outputFilename string, generatedFiles *[]string, mu *sync.Mutex, flag *Flag,
 ) error {
-	for _, imgURL := range imgFromPage {
+	for imgURL := range slices.Values(imgFromPage) {
 		lowerCaseImgURL := strings.ToLower(imgURL)
 
 		ext := gp.clients.Website.GetImageExtension(lowerCaseImgURL)
@@ -193,7 +194,7 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 	}
 	var chapters []chapter
 
-	for _, m := range data {
+	for m := range slices.Values(data) {
 		for chapterNum, imageLink := range m {
 			chapters = append(chapters, chapter{chapterNum, imageLink})
 		}
@@ -237,7 +238,7 @@ func (gp *generateProcess) processBatches(batchLink []map[float64][]string, comi
 	batchGroup, ctx := errgroup.WithContext(context.Background())
 	batchGroup.SetLimit(flag.MaxConcurrent)
 
-	for _, batch := range batches {
+	for batch := range slices.Values(batches) {
 		for title, items := range batch {
 			title := title
 			items := items
