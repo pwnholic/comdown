@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,31 +21,37 @@ import (
 type generateProcess struct {
 	clients  clients.RequestBuilder
 	exporter exports.DocumentExporter
+	pdfPool  sync.Pool
 }
 
 func NewGenerateProcess(t *clients.HTTPClientOptions) *generateProcess {
 	return &generateProcess{
 		clients:  *clients.NewRequestBuilder(t),
 		exporter: *exports.NewDocumentExporter(),
+		pdfPool: sync.Pool{
+			New: func() any {
+				return exports.NewPDFGenerator()
+			},
+		},
 	}
 }
 
-func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
+func (gp *generateProcess) processChapters(flag *Flag, comicDir string) error {
 	startTime := time.Now()
 	internal.InfoLog("Starting chapter processing with %d max workers\n", flag.MaxConcurrent)
 
-	g, ctx := errgroup.WithContext(context.Background())
-	g.SetLimit(flag.MaxConcurrent)
+	if err := os.MkdirAll(comicDir, 0755); err != nil {
+		return fmt.Errorf("failed to create comic directory: %w", err)
+	}
 
 	attr := gp.clients.Website.GetHTMLTagAttrFromURL(flag.RawURL)
 	if attr == nil {
-		internal.ErrorLog("HTML attribute not found or Website unsupported")
-		os.Exit(1)
+		return fmt.Errorf("HTML attribute not found or website unsupported")
 	}
 
 	comicMeta := clients.ComicMetadata{
 		MaxChapter:    flag.MaxChapter,
-		MinChapter:    flag.MaxChapter,
+		MinChapter:    flag.MinChapter,
 		RawURL:        flag.RawURL,
 		Single:        flag.Single,
 		ScraperConfig: *attr,
@@ -54,101 +59,131 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) {
 
 	allLinks, err := gp.clients.Request.CollectLinks(&comicMeta)
 	if err != nil {
-		internal.ErrorLog("Error fetching links: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error fetching links: %w", err)
 	}
+
+	internal.InfoLog("Processing %d chapters\n", len(allLinks))
+
+	results, err := gp.processChapterLinks(flag, comicDir, allLinks, attr)
+	if err != nil {
+		return err
+	}
+
+	if flag.BatchSize > 0 {
+		if err := gp.processChapterBatches(results.batchLinks, flag, comicDir); err != nil {
+			return err
+		}
+	}
+
+	internal.InfoLog("[SUMMARY] Processed %d chapters in %v\n", len(allLinks), time.Since(startTime))
+	internal.InfoLog("[SUMMARY] Generated %d PDF files\n", len(results.generatedFiles))
+	internal.InfoLog("[SUMMARY] Processed %d images in total\n", results.totalImages)
+
+	return nil
+}
+
+type processResults struct {
+	generatedFiles []string
+	batchLinks     []map[float64][]string
+	totalImages    int
+}
+
+func (gp *generateProcess) processChapterLinks(flag *Flag, comicDir string, allLinks []string, attr *clients.ScraperConfig) (*processResults, error) {
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(flag.MaxConcurrent)
 
 	var (
 		mu             sync.Mutex
 		generatedFiles []string
 		fileCache      sync.Map
-		batchLink      []map[float64][]string
+		batchLinks     []map[float64][]string
 		totalImages    int
 	)
 
-	internal.InfoLog("Processing %d chapters\n", len(allLinks))
+	for _, rawURL := range allLinks {
+		rawURL := rawURL
 
-	isFileExists := func(filename string, cache *sync.Map) bool {
-		if val, ok := cache.Load(filename); ok {
-			return val.(bool)
-		}
-		info, err := os.Stat(filename)
-		exists := err == nil && !info.IsDir()
-		cache.Store(filename, exists)
-		return exists
-	}
-
-	for url := range slices.Values(allLinks) {
-		rawURL := url
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				titleStr := gp.clients.Website.GetChapterNumber(rawURL)
-				if titleStr == "" {
-					internal.ErrorLog("Could not extract chapter number from URL: %s\n", rawURL)
-					return fmt.Errorf("could not extract chapter number")
-				}
-
-				outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", titleStr))
-
-				if isFileExists(outputFilename, &fileCache) {
-					internal.InfoLog("File already exists, skipping: %s\n", outputFilename)
-					return nil
-				}
-
-				comicMeta := clients.ComicMetadata{
-					RawURL:        rawURL,
-					ScraperConfig: *attr,
-				}
-
-				imgFromPage, err := gp.clients.Request.CollectImgTagsLink(&comicMeta)
-				if err != nil || len(imgFromPage) == 0 {
-					internal.ErrorLog("Error fetching page links: %v\n", err)
-					return err
-				}
-
-				mu.Lock()
-				totalImages += len(imgFromPage)
-				mu.Unlock()
-
-				if flag.BatchSize > 0 {
-					titleFloat, err := strconv.ParseFloat(titleStr, 64)
-					if err != nil {
-						internal.WarningLog("Chapter title is not a number, using position instead: %s\n", titleStr)
-						titleFloat = float64(len(batchLink) + 1) // Use position as fallback
-					}
-					mu.Lock()
-					batchLink = append(batchLink, map[float64][]string{
-						titleFloat: imgFromPage,
-					})
-					mu.Unlock()
-					return nil
-				}
-				return gp.processChapterImages(imgFromPage, outputFilename, &generatedFiles, &mu, flag)
+				return gp.processSingleChapter(flag, comicDir, rawURL, attr, &mu, &generatedFiles, &fileCache, &batchLinks, &totalImages)
 			}
 		})
 	}
 
 	if err := g.Wait(); err != nil {
-		internal.ErrorLog("Error processing chapters: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("error processing chapters: %w", err)
 	}
+
+	return &processResults{
+		generatedFiles: generatedFiles,
+		batchLinks:     batchLinks,
+		totalImages:    totalImages,
+	}, nil
+}
+
+func (gp *generateProcess) processSingleChapter(flag *Flag, comicDir, rawURL string, attr *clients.ScraperConfig,
+	mu *sync.Mutex, generatedFiles *[]string, fileCache *sync.Map, batchLinks *[]map[float64][]string, totalImages *int,
+) error {
+	titleStr := gp.clients.Website.GetChapterNumber(rawURL)
+	if titleStr == "" {
+		return fmt.Errorf("could not extract chapter number from URL: %s", rawURL)
+	}
+
+	outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", titleStr))
+
+	if isFileExists(outputFilename, fileCache) {
+		internal.InfoLog("File already exists, skipping: %s\n", outputFilename)
+		return nil
+	}
+
+	comicMeta := clients.ComicMetadata{
+		RawURL:        rawURL,
+		ScraperConfig: *attr,
+	}
+
+	imgFromPage, err := gp.clients.Request.CollectImgTagsLink(&comicMeta)
+	if err != nil {
+		return fmt.Errorf("error fetching page links: %w", err)
+	}
+	if len(imgFromPage) == 0 {
+		return fmt.Errorf("no images found for chapter: %s", rawURL)
+	}
+
+	mu.Lock()
+	*totalImages += len(imgFromPage)
+	mu.Unlock()
 
 	if flag.BatchSize > 0 {
-		gp.processBatches(batchLink, comicDir, flag, &generatedFiles, &mu)
+		titleFloat, err := strconv.ParseFloat(titleStr, 64)
+		if err != nil {
+			internal.WarningLog("Chapter title is not a number, using position instead: %s\n", titleStr)
+			titleFloat = float64(len(*batchLinks) + 1)
+		}
+		mu.Lock()
+		*batchLinks = append(*batchLinks, map[float64][]string{
+			titleFloat: imgFromPage,
+		})
+		mu.Unlock()
+		return nil
 	}
 
-	internal.InfoLog("[SUMMARY] Processed %d chapters in %v\n", len(allLinks), time.Since(startTime))
-	internal.InfoLog("[SUMMARY] Generated %d PDF files\n", len(generatedFiles))
-	internal.InfoLog("[SUMMARY] Processed %d images in total\n", totalImages)
+	return gp.processChapterImages(imgFromPage, outputFilename, generatedFiles, mu, flag)
 }
 
 func (gp *generateProcess) processChapterImages(
 	imgFromPage []string, outputFilename string, generatedFiles *[]string, mu *sync.Mutex, flag *Flag,
 ) error {
-	for imgURL := range slices.Values(imgFromPage) {
+	// Get PDF generator from pool
+	pdfGen := gp.pdfPool.Get().(*exports.PDFGenerator)
+	defer func() {
+		pdfGen.Reset()
+		gp.pdfPool.Put(pdfGen)
+	}()
+
+	for _, imgURL := range imgFromPage {
 		lowerCaseImgURL := strings.ToLower(imgURL)
 
 		ext := gp.clients.Website.GetImageExtension(lowerCaseImgURL)
@@ -162,21 +197,28 @@ func (gp *generateProcess) processChapterImages(
 			continue
 		}
 
-		imageData, imgLink, err := gp.clients.Request.CollectImage(imgURL, *ext, flag.EnhanceImage)
+		var imageData []byte
+		var err error
+		for attempt := 1; attempt <= 3; attempt++ {
+			imageData, _, err = gp.clients.Request.CollectImage(imgURL, *ext, flag.EnhanceImage)
+			if err == nil {
+				break
+			}
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
 		if err != nil {
-			internal.ErrorLog("Error fetching image link %s with eror: %s\n", imgLink, err.Error())
+			internal.ErrorLog("Failed to fetch image after 3 attempts: %s\n", imgURL)
 			continue
 		}
 
-		if err := gp.exporter.PDF.AddImageToPDF(imageData); err != nil {
+		if err := pdfGen.AddImageToPDF(imageData); err != nil {
 			internal.ErrorLog("Error adding image to PDF: %s\n", err.Error())
 			continue
 		}
 	}
 
-	if err := gp.exporter.PDF.SavePDF(outputFilename); err != nil {
-		internal.ErrorLog("Error saving PDF: %v\n", err)
-		return err
+	if err := pdfGen.SavePDF(outputFilename); err != nil {
+		return fmt.Errorf("error saving PDF: %w", err)
 	}
 
 	internal.SuccessLog("Saved to %s\n", outputFilename)
@@ -187,6 +229,53 @@ func (gp *generateProcess) processChapterImages(
 	return nil
 }
 
+func (gp *generateProcess) processChapterBatches(batchLinks []map[float64][]string, flag *Flag, comicDir string) error {
+	internal.InfoLog("Starting batch processing with size %d\n", flag.BatchSize)
+	batchSize := len(batchLinks) / flag.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	batches := iterateMapInBatch(batchLinks, batchSize)
+
+	var (
+		mu             sync.Mutex
+		generatedFiles []string
+	)
+
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(flag.MaxConcurrent)
+
+	for _, batch := range batches {
+		for title, items := range batch {
+			title, items := title, items
+			g.Go(func() error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					err := gp.processChapterImages(items, filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title)), &generatedFiles, &mu, flag)
+					if err != nil {
+						return fmt.Errorf("error processing batch %s: %w", title, err)
+					}
+					return nil
+				}
+			})
+		}
+	}
+
+	return g.Wait()
+}
+
+func isFileExists(filename string, cache *sync.Map) bool {
+	if val, ok := cache.Load(filename); ok {
+		return val.(bool)
+	}
+	_, err := os.Stat(filename)
+	exists := err == nil
+	cache.Store(filename, exists)
+	return exists
+}
+
 func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string][]string {
 	type chapter struct {
 		num    float64
@@ -194,7 +283,7 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 	}
 	var chapters []chapter
 
-	for m := range slices.Values(data) {
+	for _, m := range data {
 		for chapterNum, imageLink := range m {
 			chapters = append(chapters, chapter{chapterNum, imageLink})
 		}
@@ -208,8 +297,8 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 
 	for i := 0; i < len(chapters); i += batchSize {
 		end := min(i+batchSize, len(chapters))
-
 		batch := chapters[i:end]
+
 		var images []string
 		startNum := batch[0].num
 		endNum := batch[len(batch)-1].num
@@ -228,33 +317,4 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 		batches = append(batches, map[string][]string{title: images})
 	}
 	return batches
-}
-
-func (gp *generateProcess) processBatches(batchLink []map[float64][]string, comicDir string, flag *Flag, generatedFiles *[]string, mu *sync.Mutex) {
-	internal.InfoLog("Starting batch processing with size %d\n", flag.BatchSize)
-	batchSize := len(batchLink) / flag.BatchSize
-	batches := iterateMapInBatch(batchLink, batchSize)
-
-	batchGroup, ctx := errgroup.WithContext(context.Background())
-	batchGroup.SetLimit(flag.MaxConcurrent)
-
-	for batch := range slices.Values(batches) {
-		for title, items := range batch {
-			title := title
-			items := items
-			batchGroup.Go(func() error {
-				select {
-				case <-ctx.Done():
-					internal.ErrorLog("Context cancelled for chapter: %s\n", title)
-					return ctx.Err()
-				default:
-					return gp.processChapterImages(items, filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title)), generatedFiles, mu, flag)
-				}
-			})
-		}
-	}
-	if err := batchGroup.Wait(); err != nil {
-		internal.ErrorLog("Error processing batches: %v\n", err)
-		os.Exit(1)
-	}
 }

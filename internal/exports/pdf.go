@@ -2,46 +2,88 @@ package exports
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"image"
+	"sync"
 
-	"github.com/pwnholic/comdown/internal"
 	"github.com/signintech/gopdf"
 )
 
-type pdfGenerator struct {
-	PDF *gopdf.GoPdf
+type PDFGenerator struct {
+	pdf   *gopdf.GoPdf
+	mutex sync.Mutex
 }
 
-func NewPDFGenerator() *pdfGenerator {
-	pdf := gopdf.GoPdf{}
+func NewPDFGenerator() *PDFGenerator {
+	pdf := &gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
 		PageSize: *gopdf.PageSizeA4,
 	})
-	return &pdfGenerator{PDF: &pdf}
+	pdf.SetCompressLevel(0)
+	return &PDFGenerator{pdf: pdf}
 }
 
-func (p *pdfGenerator) AddImageToPDF(imgBytes []byte) error {
+func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if len(imgBytes) == 0 {
+		return errors.New("empty image data")
+	}
+
 	imageHolder, err := gopdf.ImageHolderByBytes(imgBytes)
 	if err != nil {
-		internal.ErrorLog("Failed to create image holder: %s", err.Error())
-		return err
+		return fmt.Errorf("failed to create image holder: %w", err)
 	}
 
 	imageConfig, _, err := image.DecodeConfig(bytes.NewReader(imgBytes))
 	if err != nil {
-		internal.ErrorLog("Failed to decode image config: %s", err.Error())
-		return err
+		return fmt.Errorf("failed to decode image config: %w", err)
 	}
 
-	p.PDF.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{
+	pageSize := &gopdf.Rect{
 		W: float64(imageConfig.Width)*72/128 - 1,
 		H: float64(imageConfig.Height)*72/128 - 1,
-	}})
-	return p.PDF.ImageByHolder(imageHolder, 0, 0, nil)
+	}
+
+	p.pdf.AddPageWithOption(gopdf.PageOption{PageSize: pageSize})
+	if err := p.pdf.ImageByHolder(imageHolder, 0, 0, nil); err != nil {
+		return fmt.Errorf("failed to add image to PDF: %w", err)
+	}
+
+	return nil
 }
 
-func (p *pdfGenerator) SavePDF(outputPath string) error {
-	internal.InfoLog("Saving PDF to: %s", outputPath)
-	return p.PDF.WritePdf(outputPath)
+func (p *PDFGenerator) SavePDF(outputPath string) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.pdf == nil {
+		return errors.New("PDF not initialized")
+	}
+	return p.pdf.WritePdf(outputPath)
+}
+
+func (p *PDFGenerator) Reset() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	newPdf := &gopdf.GoPdf{}
+	newPdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: *gopdf.PageSizeA4,
+	})
+	newPdf.SetCompressLevel(0)
+	p.pdf = newPdf
+}
+
+func (p *PDFGenerator) Close() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.pdf != nil {
+		p.pdf = nil
+	}
 }
