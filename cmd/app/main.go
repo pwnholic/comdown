@@ -25,8 +25,9 @@ func main() {
 	startTime := time.Now()
 	customFlag := parseFlag()
 
-	userAgent := clients.UserAgents[rand.Intn(len(clients.UserAgents))] // mostly website will block our request so i do this :))
-	t := &clients.HTTPClientOptions{
+	// mostly website will block our request so i do this :))
+	userAgent := clients.UserAgents[rand.Intn(len(clients.UserAgents))]
+	httpOpts := &clients.HTTPClientOptions{
 		RetryCount:       5,
 		RetryWaitTime:    5,
 		RetryMaxWaitTime: 5,
@@ -34,7 +35,7 @@ func main() {
 		UserAgent:        userAgent,
 	}
 
-	process := NewGenerateComic(t)
-	process.processGenerateComic(customFlag)
+	process := NewGenerateComic(httpOpts, customFlag)
+	process.processGenerateComic()
 	internal.SuccessLog("Program completed in %v\n", time.Since(startTime))
 }
