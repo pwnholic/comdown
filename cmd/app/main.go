@@ -34,7 +34,7 @@ func main() {
 		UserAgent:        userAgent,
 	}
 
-	process := NewGenerateProcess(t)
+	process := NewGenerateComic(t)
 	process.processGenerateComic(customFlag)
 	internal.SuccessLog("Program completed in %v\n", time.Since(startTime))
 }

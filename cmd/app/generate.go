@@ -21,14 +21,14 @@ import (
 	"github.com/pwnholic/comdown/internal/exports"
 )
 
-type generateProcess struct {
+type generateComic struct {
 	clients  clients.RequestBuilder
 	exporter exports.DocumentExporter
 	pdfPool  sync.Pool
 }
 
-func NewGenerateProcess(t *clients.HTTPClientOptions) *generateProcess {
-	return &generateProcess{
+func NewGenerateComic(t *clients.HTTPClientOptions) *generateComic {
+	return &generateComic{
 		clients:  *clients.NewRequestBuilder(t),
 		exporter: *exports.NewDocumentExporter(),
 		pdfPool: sync.Pool{
@@ -39,14 +39,14 @@ func NewGenerateProcess(t *clients.HTTPClientOptions) *generateProcess {
 	}
 }
 
-func (gp *generateProcess) processGenerateComic(flag *Flag) error {
+func (gp *generateComic) processGenerateComic(flag *Flag) error {
 	if len(flag.URLs) < 1 {
 		return gp.processSingleComic(flag)
 	}
 	return gp.processBatchComic(flag)
 }
 
-func (gp *generateProcess) processBatchComic(flag *Flag) error {
+func (gp *generateComic) processBatchComic(flag *Flag) error {
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(len(flag.URLs))
 	errChan := make(chan error, len(flag.URLs))
@@ -82,7 +82,18 @@ func (gp *generateProcess) processBatchComic(flag *Flag) error {
 	return nil
 }
 
-func (gp *generateProcess) processSingleComic(flag *Flag) error {
+func getLastPathSegment(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL: %w", err)
+	}
+	fullPath := u.Path
+	fullPath = strings.TrimSuffix(fullPath, "/")
+	lastSegment := path.Base(fullPath)
+	return lastSegment, nil
+}
+
+func (gp *generateComic) processSingleComic(flag *Flag) error {
 	startTime := time.Now()
 	internal.InfoLog("Starting chapter processing with %d max workers\n", flag.MaxConcurrent)
 
@@ -116,7 +127,6 @@ func (gp *generateProcess) processSingleComic(flag *Flag) error {
 	}
 
 	internal.InfoLog("Processing %d chapters\n", len(allLinks))
-
 	results, err := gp.processChapterLinks(flag, folderName, allLinks, attr)
 	if err != nil {
 		return err
@@ -141,7 +151,7 @@ type processResults struct {
 	totalImages    int
 }
 
-func (gp *generateProcess) processChapterLinks(flag *Flag, comicDir string, allLinks []string, attr *clients.ScraperConfig) (*processResults, error) {
+func (gp *generateComic) processChapterLinks(flag *Flag, comicDir string, allLinks []string, attr *clients.ScraperConfig) (*processResults, error) {
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(flag.MaxConcurrent)
 
@@ -176,7 +186,7 @@ func (gp *generateProcess) processChapterLinks(flag *Flag, comicDir string, allL
 	}, nil
 }
 
-func (gp *generateProcess) processComicChapter(flag *Flag, comicDir, rawURL string, attr *clients.ScraperConfig,
+func (gp *generateComic) processComicChapter(flag *Flag, comicDir, rawURL string, attr *clients.ScraperConfig,
 	mu *sync.Mutex, generatedFiles *[]string, fileCache *sync.Map, batchLinks *[]map[float64][]string, totalImages *int,
 ) error {
 	titleStr := gp.clients.Website.GetChapterNumber(rawURL)
@@ -225,7 +235,7 @@ func (gp *generateProcess) processComicChapter(flag *Flag, comicDir, rawURL stri
 	return gp.processChapterImages(imgFromPage, outputFilename, generatedFiles, mu, flag)
 }
 
-func (gp *generateProcess) processChapterImages(
+func (gp *generateComic) processChapterImages(
 	imgFromPage []string, outputFilename string, generatedFiles *[]string, mu *sync.Mutex, flag *Flag,
 ) error {
 	// Get PDF generator from pool
@@ -281,7 +291,7 @@ func (gp *generateProcess) processChapterImages(
 	return nil
 }
 
-func (gp *generateProcess) processMergeChapter(batchLinks []map[float64][]string, flag *Flag, comicDir string) error {
+func (gp *generateComic) processMergeChapter(batchLinks []map[float64][]string, flag *Flag, comicDir string) error {
 	internal.InfoLog("Starting batch processing with size %d\n", flag.MergeSize)
 	batchSize := len(batchLinks) / flag.MergeSize
 	if batchSize <= 0 {
@@ -369,15 +379,4 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 		batches = append(batches, map[string][]string{title: images})
 	}
 	return batches
-}
-
-func getLastPathSegment(rawURL string) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse URL: %w", err)
-	}
-	fullPath := u.Path
-	fullPath = strings.TrimSuffix(fullPath, "/")
-	lastSegment := path.Base(fullPath)
-	return lastSegment, nil
 }
