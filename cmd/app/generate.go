@@ -50,7 +50,6 @@ func (gp *generateComic) processBatchComic(flag *Flag) error {
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(len(flag.URLs))
 	errChan := make(chan error, len(flag.URLs))
-
 	for _, u := range flag.URLs {
 		url := u
 		g.Go(func() error {
@@ -58,8 +57,15 @@ func (gp *generateComic) processBatchComic(flag *Flag) error {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				flag.URL = url
-				if err := gp.processSingleComic(flag); err != nil {
+				localFlag := &Flag{ // prevent rice condition
+					URL:           url,
+					MaxChapter:    flag.MaxChapter,
+					MinChapter:    flag.MinChapter,
+					Single:        flag.Single,
+					MaxConcurrent: flag.MaxConcurrent,
+					MergeSize:     flag.MergeSize,
+				}
+				if err := gp.processSingleComic(localFlag); err != nil {
 					errChan <- fmt.Errorf("error processing %s: %w", url, err)
 					return err
 				}
@@ -106,7 +112,7 @@ func (gp *generateComic) processSingleComic(flag *Flag) error {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create comic directory: %w", err)
 	}
-	internal.InfoLog("Directory %s has been created", dir)
+	internal.InfoLog("Creating New Directory [%s]\n", dir)
 
 	attr := gp.clients.Website.GetHTMLTagAttrFromURL(flag.URL)
 	if attr == nil {
