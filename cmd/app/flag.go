@@ -26,7 +26,7 @@ func parseFlag() *Flag {
 	help := flag.Bool("h", false, "Display this help message and exit")
 	flag.BoolVar(help, "help", false, "Alias for -h")
 
-	rawURL := flag.String("url", "", `Target website URL (e.g. "https://komikindo.id/one-piece")`)
+	url := flag.String("url", "", `Target website URL (e.g. "https://komikindo.id/one-piece")`)
 	batchFile := flag.String("batch", "", `Path to file containing multiple URLs (one per line)`)
 	minChapter := flag.Int("min-ch", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
 	maxChapter := flag.Int("max-ch", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
@@ -51,12 +51,12 @@ func parseFlag() *Flag {
 		os.Exit(0)
 	}
 
-	if *rawURL == "" && *batchFile == "" {
+	if *url == "" && *batchFile == "" {
 		fmt.Println("Either URL or batch file is required. Use -url or -batch flag")
 		os.Exit(1)
 	}
 
-	if *rawURL != "" && *batchFile != "" {
+	if *url != "" && *batchFile != "" {
 		internal.ErrorLog("Cannot use both -url and -batch at the same time")
 		os.Exit(1)
 	}
@@ -114,7 +114,7 @@ func parseFlag() *Flag {
 	return &Flag{
 		MaxChapter:    *maxChapter,
 		MinChapter:    *minChapter,
-		URL:           *rawURL,
+		URL:           *url,
 		URLs:          urls,
 		MaxConcurrent: *maxConcurrent,
 		Single:        *isSingle,

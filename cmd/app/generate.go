@@ -348,7 +348,6 @@ func (gc *generateComic) processMergeChapter(batchLinks []map[float64][]string, 
 			})
 		}
 	}
-
 	return g.Wait()
 }
 
