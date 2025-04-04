@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -36,15 +39,65 @@ func NewGenerateProcess(t *clients.HTTPClientOptions) *generateProcess {
 	}
 }
 
-func (gp *generateProcess) processChapters(flag *Flag, comicDir string) error {
+func (gp *generateProcess) processGenerateComic(flag *Flag) error {
+	if len(flag.URLs) < 1 {
+		return gp.processSingleComic(flag)
+	}
+	return gp.processBatchComic(flag)
+}
+
+func (gp *generateProcess) processBatchComic(flag *Flag) error {
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(len(flag.URLs))
+	errChan := make(chan error, len(flag.URLs))
+
+	for _, u := range flag.URLs {
+		url := u
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				flag.URL = url
+				if err := gp.processSingleComic(flag); err != nil {
+					errChan <- fmt.Errorf("error processing %s: %w", url, err)
+					return err
+				}
+				return nil
+			}
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		close(errChan)
+		var errs []error
+		for e := range errChan {
+			errs = append(errs, e)
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("completed with %d errors: %v", len(errs), errors.Join(errs...))
+		}
+		return err
+	}
+	return nil
+}
+
+func (gp *generateProcess) processSingleComic(flag *Flag) error {
 	startTime := time.Now()
 	internal.InfoLog("Starting chapter processing with %d max workers\n", flag.MaxConcurrent)
 
-	if err := os.MkdirAll(comicDir, 0755); err != nil {
-		return fmt.Errorf("failed to create comic directory: %w", err)
+	folderName, err := getLastPathSegment(flag.URL)
+	if err != nil {
+		return err
 	}
 
-	attr := gp.clients.Website.GetHTMLTagAttrFromURL(flag.RawURL)
+	dir := fmt.Sprintf("comics/%s", folderName)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create comic directory: %w", err)
+	}
+	internal.InfoLog("Directory %s has been created", dir)
+
+	attr := gp.clients.Website.GetHTMLTagAttrFromURL(flag.URL)
 	if attr == nil {
 		return fmt.Errorf("HTML attribute not found or website unsupported")
 	}
@@ -52,7 +105,7 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) error {
 	comicMeta := clients.ComicMetadata{
 		MaxChapter:    flag.MaxChapter,
 		MinChapter:    flag.MinChapter,
-		RawURL:        flag.RawURL,
+		RawURL:        flag.URL,
 		Single:        flag.Single,
 		ScraperConfig: *attr,
 	}
@@ -64,13 +117,13 @@ func (gp *generateProcess) processChapters(flag *Flag, comicDir string) error {
 
 	internal.InfoLog("Processing %d chapters\n", len(allLinks))
 
-	results, err := gp.processChapterLinks(flag, comicDir, allLinks, attr)
+	results, err := gp.processChapterLinks(flag, folderName, allLinks, attr)
 	if err != nil {
 		return err
 	}
 
-	if flag.BatchSize > 0 {
-		if err := gp.processChapterBatches(results.batchLinks, flag, comicDir); err != nil {
+	if flag.MergeSize > 0 {
+		if err := gp.processMergeChapter(results.batchLinks, flag, folderName); err != nil {
 			return err
 		}
 	}
@@ -102,13 +155,12 @@ func (gp *generateProcess) processChapterLinks(flag *Flag, comicDir string, allL
 
 	for _, rawURL := range allLinks {
 		rawURL := rawURL
-
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
-				return gp.processSingleChapter(flag, comicDir, rawURL, attr, &mu, &generatedFiles, &fileCache, &batchLinks, &totalImages)
+				return gp.processComicChapter(flag, comicDir, rawURL, attr, &mu, &generatedFiles, &fileCache, &batchLinks, &totalImages)
 			}
 		})
 	}
@@ -124,7 +176,7 @@ func (gp *generateProcess) processChapterLinks(flag *Flag, comicDir string, allL
 	}, nil
 }
 
-func (gp *generateProcess) processSingleChapter(flag *Flag, comicDir, rawURL string, attr *clients.ScraperConfig,
+func (gp *generateProcess) processComicChapter(flag *Flag, comicDir, rawURL string, attr *clients.ScraperConfig,
 	mu *sync.Mutex, generatedFiles *[]string, fileCache *sync.Map, batchLinks *[]map[float64][]string, totalImages *int,
 ) error {
 	titleStr := gp.clients.Website.GetChapterNumber(rawURL)
@@ -156,7 +208,7 @@ func (gp *generateProcess) processSingleChapter(flag *Flag, comicDir, rawURL str
 	*totalImages += len(imgFromPage)
 	mu.Unlock()
 
-	if flag.BatchSize > 0 {
+	if flag.MergeSize > 0 {
 		titleFloat, err := strconv.ParseFloat(titleStr, 64)
 		if err != nil {
 			internal.WarningLog("Chapter title is not a number, using position instead: %s\n", titleStr)
@@ -229,9 +281,9 @@ func (gp *generateProcess) processChapterImages(
 	return nil
 }
 
-func (gp *generateProcess) processChapterBatches(batchLinks []map[float64][]string, flag *Flag, comicDir string) error {
-	internal.InfoLog("Starting batch processing with size %d\n", flag.BatchSize)
-	batchSize := len(batchLinks) / flag.BatchSize
+func (gp *generateProcess) processMergeChapter(batchLinks []map[float64][]string, flag *Flag, comicDir string) error {
+	internal.InfoLog("Starting batch processing with size %d\n", flag.MergeSize)
+	batchSize := len(batchLinks) / flag.MergeSize
 	if batchSize <= 0 {
 		batchSize = 1
 	}
@@ -317,4 +369,15 @@ func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string]
 		batches = append(batches, map[string][]string{title: images})
 	}
 	return batches
+}
+
+func getLastPathSegment(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL: %w", err)
+	}
+	fullPath := u.Path
+	fullPath = strings.TrimSuffix(fullPath, "/")
+	lastSegment := path.Base(fullPath)
+	return lastSegment, nil
 }

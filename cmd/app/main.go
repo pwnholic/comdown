@@ -35,14 +35,6 @@ func main() {
 	}
 
 	process := NewGenerateProcess(t)
-
-	comicDir := "comic"
-	internal.InfoLog("Creating comic directory: %s\n", comicDir)
-	if err := os.MkdirAll(comicDir, os.ModePerm); err != nil {
-		internal.ErrorLog("Failed creating comic directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	process.processChapters(customFlag, comicDir)
+	process.processGenerateComic(customFlag)
 	internal.SuccessLog("Program completed in %v\n", time.Since(startTime))
 }
