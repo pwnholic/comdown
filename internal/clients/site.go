@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/pwnholic/comdown/internal"
@@ -104,15 +105,19 @@ func (c *websiteConfig) GetImageExtension(url string) string {
 	return ext
 }
 
-func (w *websiteConfig) GetChapterNumber(urlRaw string) string {
-	re := regexp.MustCompile(`chapter-(\d+)(?:-(\d+))?/`)
-	matches := re.FindStringSubmatch(urlRaw)
-
-	if len(matches) >= 2 {
-		if len(matches) >= 3 && matches[2] != "" {
-			return matches[1] + "." + matches[2]
-		}
-		return matches[1]
+func (w *websiteConfig) GetChapterNumber(urlRaw string) (string, error) {
+	re := regexp.MustCompile(`chapter-(\d+)(?:-(\d+))?`)
+	match := re.FindStringSubmatch(urlRaw)
+	if match == nil {
+		return "", fmt.Errorf("number not found")
 	}
-	return urlRaw
+
+	mainNum, _ := strconv.Atoi(match[1])
+	mainFormatted := fmt.Sprintf("%02d", mainNum)
+
+	if match[2] != "" {
+		return fmt.Sprintf("%s.%s", mainFormatted, match[2]), nil
+	}
+
+	return mainFormatted, nil
 }

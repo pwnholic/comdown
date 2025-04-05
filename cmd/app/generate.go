@@ -141,7 +141,7 @@ func (gc *generateComic) processSingleComic(flag *Flag) error {
 	}
 
 	internal.InfoLog("Processing %d chapters\n", len(allLinks))
-	results, err := gc.processChapterLinks(folderName, allLinks, attr)
+	results, err := gc.processChapterLinks(dir, allLinks, attr)
 	if err != nil {
 		return err
 	}
@@ -212,9 +212,10 @@ func (gc *generateComic) processComicChapter(
 	batchLinks *[]map[float64][]string,
 	totalImages *int,
 ) error {
-	titleStr := gc.clients.Website.GetChapterNumber(rawURL)
-	if titleStr == "" {
-		return fmt.Errorf("could not extract chapter number from URL: %s", rawURL)
+	titleStr, err := gc.clients.Website.GetChapterNumber(rawURL)
+	if err != nil {
+		internal.ErrorLog("could not extract chapter number from URL: %s", rawURL)
+		return err
 	}
 
 	outputFilename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", titleStr))
@@ -258,26 +259,16 @@ func (gc *generateComic) processComicChapter(
 	return gc.processChapterImages(imgFromPage, outputFilename, generatedFiles)
 }
 
-func (gc *generateComic) processChapterImages(
-	imgFromPage []string,
-	outputFilename string,
-	generatedFiles *[]string,
-) error {
-	// Get PDF generator from pool
+func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilename string, generatedFiles *[]string) error {
 	pdfGen := gc.pdfPool.Get().(*exports.PDFGenerator)
-	defer func() {
-		pdfGen.Reset()
-		gc.pdfPool.Put(pdfGen)
-	}()
-
 	if len(imgFromPage) < 1 {
 		internal.ErrorLog("image form page should not be 0")
+		gc.pdfPool.Put(pdfGen)
 		return nil
 	}
 
 	for _, imgURL := range imgFromPage {
 		lowerCaseImgURL := strings.ToLower(imgURL)
-
 		ext := gc.clients.Website.GetImageExtension(lowerCaseImgURL)
 		if ext == "" {
 			internal.WarningLog("Unsupported image format: %s\n", lowerCaseImgURL)
@@ -302,8 +293,11 @@ func (gc *generateComic) processChapterImages(
 	}
 
 	if err := pdfGen.SavePDF(outputFilename); err != nil {
-		return fmt.Errorf("error saving PDF: %w", err)
+		gc.pdfPool.Put(pdfGen) // <<-- pastikan dikembalikan meski error
+		return err
 	}
+
+	gc.pdfPool.Put(pdfGen)
 
 	internal.SuccessLog("Saved to %s\n", outputFilename)
 
@@ -334,7 +328,8 @@ func (gc *generateComic) processMergeChapter(batchLinks []map[float64][]string, 
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
-					err := gc.processChapterImages(items, filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title)), &generatedFiles)
+					filename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title))
+					err := gc.processChapterImages(items, filename, &generatedFiles)
 					if err != nil {
 						return fmt.Errorf("error processing batch %s: %w", title, err)
 					}

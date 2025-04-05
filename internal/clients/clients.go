@@ -9,7 +9,7 @@ type RequestBuilder struct {
 	Website interface {
 		GetHTMLTagAttrFromURL(rawURL string) *ScraperConfig
 		GetImageExtension(url string) string
-		GetChapterNumber(urlRaw string) string
+		GetChapterNumber(urlRaw string) (string, error)
 	}
 }
 

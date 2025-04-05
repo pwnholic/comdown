@@ -57,11 +57,9 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
 func (p *PDFGenerator) SavePDF(outputPath string) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-
 	if p.pdf == nil {
 		return errors.New("PDF not initialized")
 	}
-	p.pdf.SetCompressLevel(0)
 	return p.pdf.WritePdf(outputPath)
 }
 

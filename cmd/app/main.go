@@ -36,6 +36,10 @@ func main() {
 	}
 
 	process := NewGenerateComic(httpOpts, customFlag)
-	process.processGenerateComic()
+	err := process.processGenerateComic()
+	if err != nil {
+		internal.ErrorLog("Something when wrong : %s", err.Error())
+		return
+	}
 	internal.SuccessLog("Program completed in %v\n", time.Since(startTime))
 }
