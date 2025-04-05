@@ -21,7 +21,6 @@ func NewPDFGenerator() *PDFGenerator {
 		Unit:     gopdf.UnitPT,
 		PageSize: *gopdf.PageSizeA4,
 	})
-	pdf.SetCompressLevel(0)
 	return &PDFGenerator{pdf: pdf}
 }
 
@@ -52,7 +51,6 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
 	if err := p.pdf.ImageByHolder(imageHolder, 0, 0, nil); err != nil {
 		return fmt.Errorf("failed to add image to PDF: %w", err)
 	}
-
 	return nil
 }
 
@@ -63,6 +61,7 @@ func (p *PDFGenerator) SavePDF(outputPath string) error {
 	if p.pdf == nil {
 		return errors.New("PDF not initialized")
 	}
+	p.pdf.SetCompressLevel(0)
 	return p.pdf.WritePdf(outputPath)
 }
 
@@ -75,7 +74,6 @@ func (p *PDFGenerator) Reset() {
 		Unit:     gopdf.UnitPT,
 		PageSize: *gopdf.PageSizeA4,
 	})
-	newPdf.SetCompressLevel(0)
 	p.pdf = newPdf
 }
 
