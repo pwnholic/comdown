@@ -15,7 +15,7 @@ import (
 type ComicMetadata struct {
 	MaxChapter int
 	MinChapter int
-	RawURL     string
+	URL        string
 	Single     int
 	ScraperConfig
 }
@@ -26,6 +26,7 @@ type ScraperConfig struct {
 	AttrChapter    string `json:"attr_chapter"`
 	ListImageURL   string `json:"list_image_url"`
 	AttrImage      string `json:"attr_image"`
+	Pattern        string `json:"pattern"`
 }
 
 type websiteConfig struct {

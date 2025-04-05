@@ -130,7 +130,7 @@ func (gc *generateComic) processSingleComic(flag *Flag) error {
 	comicMeta := clients.ComicMetadata{
 		MaxChapter:    flag.MaxChapter,
 		MinChapter:    flag.MinChapter,
-		RawURL:        flag.URL,
+		URL:           flag.URL,
 		Single:        flag.Single,
 		ScraperConfig: *attr,
 	}
@@ -225,7 +225,7 @@ func (gc *generateComic) processComicChapter(
 	}
 
 	comicMeta := clients.ComicMetadata{
-		RawURL:        rawURL,
+		URL:           rawURL,
 		ScraperConfig: *attr,
 	}
 
@@ -324,9 +324,7 @@ func (gc *generateComic) processMergeChapter(batchLinks []map[float64][]string, 
 	}
 	batches := iterateMapInBatch(batchLinks, batchSize)
 
-	var (
-		generatedFiles []string
-	)
+	var generatedFiles []string
 
 	g, ctx := errgroup.WithContext(gc.ctx)
 	g.SetLimit(gc.flag.MaxConcurrent)

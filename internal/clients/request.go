@@ -2,10 +2,13 @@ package clients
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image/jpeg"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -126,7 +129,13 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 	isRange := metadata.MinChapter > 0 && metadata.MaxChapter >= metadata.MinChapter
 	isSingle := metadata.Single != 0
 
-	response, err := c.Client.R().Get(metadata.RawURL)
+	cond := len(metadata.ListChapterURL) > 0 && len(metadata.AttrChapter) > 0 && len(metadata.URL) > 0
+	if !cond {
+		internal.ErrorLog("cannot collect link becuse condition not fullfield")
+		return nil, errors.New("condition not fullfield")
+	}
+
+	response, err := c.Client.R().Get(metadata.URL)
 	if err != nil {
 		internal.ErrorLog("Failed to fetch URL: %sn", err.Error())
 		return nil, err
@@ -155,7 +164,7 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 	document.Find(metadata.ListChapterURL).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr(metadata.AttrChapter)
 		if exists {
-			result, err := completeURL(href, metadata.RawURL)
+			result, err := completeURL(href, metadata.URL)
 			if err != nil {
 				internal.ErrorLog("Failed to add hostname :%s", err.Error())
 				return
@@ -184,7 +193,13 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 
 // Just need URL and attr
 func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, error) {
-	response, err := c.Client.R().Get(metadata.RawURL)
+	cond := len(metadata.ListChapterURL) > 0 && (len(metadata.AttrImage) > 0 || len(metadata.Pattern) > 0) && len(metadata.URL) > 0
+	if !cond {
+		internal.ErrorLog("cannot collect image link becuse condition not fullfield")
+		return nil, errors.New("condition not fullfield")
+	}
+
+	response, err := c.Client.R().Get(metadata.URL)
 	if err != nil {
 		internal.ErrorLog("Failed to fetch URL: %v\n", err.Error())
 		return nil, err
@@ -210,14 +225,38 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 	}
 
 	var links []string
+
+	isURLValid := func(u string) bool {
+		_, err := url.ParseRequestURI(u)
+		return err == nil
+	}
+
 	document.Find(metadata.ListImageURL).Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr(metadata.AttrImage)
-		if exists {
-			links = append(links, href)
+		switch len(metadata.AttrImage) > 0 && len(metadata.Pattern) < 1 {
+		case true:
+			href, exists := s.Attr(metadata.AttrImage)
+			if exists {
+				links = append(links, href)
+			}
+		case false:
+			re := regexp.MustCompile(metadata.Pattern)
+			matches := re.FindStringSubmatch(s.Text())
+			if len(matches) > 1 {
+				images := strings.SplitSeq(matches[1], ",")
+				for imgLink := range images {
+					img := strings.Trim(imgLink, "\" ")
+					img = strings.ReplaceAll(img, "\\/", "/")
+					if isURLValid(img) {
+						links = append(links, img)
+					}
+				}
+			}
+		default:
+			internal.ErrorLog("could not get anything from given metadata")
 		}
 	})
 
-	internal.InfoLog("Found %d images on page %s\n", len(links), metadata.RawURL)
+	internal.InfoLog("Found %d images on page %s\n", len(links), metadata.URL)
 	return links, nil
 }
 
