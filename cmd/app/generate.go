@@ -270,37 +270,34 @@ func (gc *generateComic) processChapterImages(
 		gc.pdfPool.Put(pdfGen)
 	}()
 
+	if len(imgFromPage) < 1 {
+		internal.ErrorLog("image form page should not be 0")
+		return nil
+	}
+
 	for _, imgURL := range imgFromPage {
 		lowerCaseImgURL := strings.ToLower(imgURL)
 
 		ext := gc.clients.Website.GetImageExtension(lowerCaseImgURL)
-		if ext == nil {
+		if ext == "" {
 			internal.WarningLog("Unsupported image format: %s\n", lowerCaseImgURL)
 			continue
 		}
 
-		if strings.Contains(*ext, "gif") {
+		if strings.Contains(ext, "gif") {
 			internal.WarningLog("Skipping gif %s\n", imgURL)
 			continue
 		}
 
-		var imageData []byte
-		var err error
-		for attempt := 1; attempt <= 3; attempt++ {
-			imageData, _, err = gc.clients.Request.CollectImage(imgURL, *ext, gc.flag.EnhanceImage)
-			if err == nil {
-				break
-			}
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
+		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, ext, gc.flag.EnhanceImage)
 		if err != nil {
-			internal.ErrorLog("Failed to fetch image after 3 attempts: %s\n", imgURL)
-			continue
+			internal.ErrorLog("could not get image byte data with error :%s", err.Error())
+			return err
 		}
 
 		if err := pdfGen.AddImageToPDF(imageData); err != nil {
 			internal.ErrorLog("Error adding image to PDF: %s\n", err.Error())
-			continue
+			return err
 		}
 	}
 

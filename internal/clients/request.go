@@ -260,11 +260,11 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 	return links, nil
 }
 
-func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, string, error) {
+func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte, error) {
 	resp, err := c.Client.R().Get(imgLink)
 	if err != nil {
 		internal.ErrorLog("Failed to fetch image after %d attempts: %s\n", resp.Request.Attempt, err.Error())
-		return nil, imgLink, fmt.Errorf("failed after %d attempts: %w", resp.Request.Attempt, err)
+		return nil, fmt.Errorf("failed after %d attempts: %w", resp.Request.Attempt, err)
 	}
 	defer resp.Body.Close()
 
@@ -272,15 +272,15 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 	_, err = buff.ReadFrom(resp.Body)
 	if err != nil {
 		internal.ErrorLog("Failed to read image data: %s\n", err.Error())
-		return nil, imgLink, err
+		return nil, err
 	}
 
 	contentType := resp.Header().Get("Content-Type")
-	enhanceImage := func(imgBytes []byte) ([]byte, string, error) {
+	enhanceImage := func(imgBytes []byte) ([]byte, error) {
 		img, err := imaging.Decode(bytes.NewReader(imgBytes))
 		if err != nil {
 			internal.ErrorLog("Failed to decode image for enhancement: %s", err.Error())
-			return nil, imgLink, nil
+			return nil, err
 		}
 
 		img = imaging.Resize(img, img.Bounds().Dx()*2, img.Bounds().Dy()*2, imaging.Lanczos)
@@ -291,10 +291,10 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 		err = jpeg.Encode(outBuff, img, &jpeg.Options{Quality: 100})
 		if err != nil {
 			internal.ErrorLog("Failed to encode enhanced image: %s", err.Error())
-			return nil, imgLink, nil
+			return nil, err
 		}
 
-		return outBuff.Bytes(), imgLink, nil
+		return outBuff.Bytes(), nil
 	}
 
 	if contentType == "image/webp" || ext == "webp" {
@@ -302,38 +302,38 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 		img, err := webp.Decode(buff)
 		if err != nil {
 			internal.ErrorLog("Failed to decode webp image: %s\n", err.Error())
-			return nil, imgLink, nil
+			return nil, err
 		}
 
 		outputBuff := new(bytes.Buffer)
 		err = jpeg.Encode(outputBuff, img, &jpeg.Options{Quality: 100})
 		if err != nil {
 			internal.ErrorLog("Failed to encode image: %s\n", err.Error())
-			return nil, imgLink, nil
+			return nil, err
 		}
 
 		if enhance {
-			enhanced, imgLink, err := enhanceImage(outputBuff.Bytes())
+			enhanced, err := enhanceImage(outputBuff.Bytes())
 			if err != nil {
 				internal.WarningLog("Failed to enhance image: %s\n", err.Error())
-				return outputBuff.Bytes(), imgLink, nil
+				return outputBuff.Bytes(), nil
 			}
 			internal.InfoLog("WEBP to JPEG conversion with enhancement completed")
-			return enhanced, imgLink, nil
+			return enhanced, nil
 		}
 
 		internal.InfoLog("WEBP to JPEG conversion completed")
-		return outputBuff.Bytes(), imgLink, nil
+		return outputBuff.Bytes(), nil
 	}
 
 	if enhance {
-		enhanced, imgLink, err := enhanceImage(buff.Bytes())
+		enhanced, err := enhanceImage(buff.Bytes())
 		if err != nil {
 			internal.WarningLog("Failed to enhance image: %s\n", err.Error())
-			return buff.Bytes(), imgLink, nil
+			return buff.Bytes(), nil
 		}
 		internal.InfoLog("Image enhancement completed")
-		return enhanced, imgLink, nil
+		return enhanced, nil
 	}
-	return buff.Bytes(), imgLink, nil
+	return buff.Bytes(), nil
 }

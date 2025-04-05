@@ -75,17 +75,17 @@ func (c *websiteConfig) GetHTMLTagAttrFromURL(rawURL string) *ScraperConfig {
 	return nil
 }
 
-func (c *websiteConfig) GetImageExtension(url string) *string {
+func (c *websiteConfig) GetImageExtension(url string) string {
 	fileName := path.Base(url)
 	if fileName == "" {
 		internal.ErrorLog("invalid URL: no file name found")
-		return nil
+		return ""
 	}
 
 	ext := strings.ToLower(path.Ext(fileName))
 	if ext == "" {
 		internal.ErrorLog("no file extension found in URL")
-		return nil
+		return ""
 	}
 
 	ext = strings.TrimPrefix(ext, ".")
@@ -99,9 +99,9 @@ func (c *websiteConfig) GetImageExtension(url string) *string {
 	}
 	if !supportedExtensions[ext] {
 		internal.ErrorLog("unsupported image extension: %s", ext)
-		return nil
+		return ""
 	}
-	return &ext
+	return ext
 }
 
 func (w *websiteConfig) GetChapterNumber(urlRaw string) string {
