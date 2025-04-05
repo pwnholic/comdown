@@ -12,7 +12,12 @@ import (
 	"github.com/pwnholic/comdown/internal"
 )
 
-// FIX: this thing will be conflict with flag struct
+type Website interface {
+	GetHTMLTagAttrFromURL(rawURL string) *ScraperConfig
+	GetImageExtension(url string) *string
+	GetChapterNumber(urlRaw string) string
+}
+
 type ComicMetadata struct {
 	MaxChapter int
 	MinChapter int

@@ -16,6 +16,12 @@ import (
 	"resty.dev/v3"
 )
 
+type Request interface {
+	CollectLinks(metadata *ComicMetadata) ([]string, error)
+	CollectImgTagsLink(metadata *ComicMetadata) ([]string, error)
+	CollectImage(imgLink, ext string, enhance bool) ([]byte, string, error)
+}
+
 type clientRequest struct {
 	Client *resty.Client
 }
