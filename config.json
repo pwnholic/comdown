@@ -10,7 +10,7 @@
     "hostname": "komiku.id",
     "list_chapter_url": "tbody tr td.judulseries a",
     "attr_chapter": "href",
-    "list_image_url": "div#baca_komik img",
+    "list_image_url": "div#Baca_Komik img",
     "attr_image": "src"
   },
   {
