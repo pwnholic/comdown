@@ -12,12 +12,6 @@ import (
 	"github.com/pwnholic/comdown/internal"
 )
 
-type Website interface {
-	GetHTMLTagAttrFromURL(rawURL string) *ScraperConfig
-	GetImageExtension(url string) *string
-	GetChapterNumber(urlRaw string) string
-}
-
 type ComicMetadata struct {
 	MaxChapter int
 	MinChapter int
