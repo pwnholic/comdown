@@ -204,7 +204,7 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 		internal.ErrorLog("Failed to fetch URL: %v\n", err.Error())
 		return nil, err
 	}
-	defer response.RawResponse.Body.Close()
+	defer response.Body.Close()
 
 	if response.StatusCode() != http.StatusOK {
 		internal.WarningLog("Skipping URL %s because status code is %d\n", metadata.URL, response.StatusCode())
@@ -217,7 +217,7 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 	}
 
 	contentType := response.Header().Get("Content-Type")
-	bodyReader, err := charset.NewReader(response.RawResponse.Body, contentType)
+	bodyReader, err := charset.NewReader(response.Body, contentType)
 	if err != nil {
 		internal.ErrorLog("Failed to create charset reader: %s\n", err.Error())
 		return nil, err
