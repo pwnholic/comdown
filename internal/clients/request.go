@@ -272,6 +272,11 @@ func (c *clientRequest) CollectImage(imgLink, ext string, enhance bool) ([]byte,
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode() != http.StatusOK {
+		internal.WarningLog("Skipping URL %s because status code is %d\n", imgLink, resp.StatusCode())
+		return nil, nil // Skip tanpa error
+	}
+
 	buff := new(bytes.Buffer)
 	_, err = buff.ReadFrom(resp.Body)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"image"
 	"sync"
 
+	"github.com/pwnholic/comdown/internal"
 	"github.com/signintech/gopdf"
 )
 
@@ -32,14 +33,24 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
 		return errors.New("empty image data")
 	}
 
+	imageConfig, format, err := image.DecodeConfig(bytes.NewReader(imgBytes))
+	if imageConfig.Width < 1 && imageConfig.Height < 1 || format == "" {
+		internal.WarningLog(
+			"Skipping invalid image | Dimensions: %dx%d | Format: %s",
+			imageConfig.Width,
+			imageConfig.Height,
+			format,
+		)
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to decode image config: %w", err)
+	}
+
 	imageHolder, err := gopdf.ImageHolderByBytes(imgBytes)
 	if err != nil {
 		return fmt.Errorf("failed to create image holder: %w", err)
-	}
-
-	imageConfig, _, err := image.DecodeConfig(bytes.NewReader(imgBytes))
-	if err != nil {
-		return fmt.Errorf("failed to decode image config: %w", err)
 	}
 
 	pageSize := &gopdf.Rect{
