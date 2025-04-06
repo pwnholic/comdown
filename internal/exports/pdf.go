@@ -29,7 +29,7 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	if len(imgBytes) == 0 {
+	if imgBytes == nil {
 		return errors.New("empty image data")
 	}
 

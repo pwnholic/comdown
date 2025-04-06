@@ -281,6 +281,11 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 		}
 
 		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, ext, gc.flag.EnhanceImage)
+		if imageData == nil {
+			internal.ErrorLog("This link [%s] has empty image", lowerCaseImgURL)
+			return nil
+		}
+
 		if err != nil {
 			internal.ErrorLog("could not get image byte data with error :%s", err.Error())
 			return err
