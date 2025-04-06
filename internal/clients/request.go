@@ -195,8 +195,8 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, error) {
 	cond := len(metadata.ListChapterURL) > 0 && (len(metadata.AttrImage) > 0 || len(metadata.Pattern) > 0) && len(metadata.URL) > 0
 	if !cond {
-		internal.ErrorLog("cannot collect image link becuse condition not fullfield")
-		return nil, errors.New("condition not fullfield")
+		internal.ErrorLog("cannot collect image link because condition not fulfilled")
+		return nil, errors.New("condition not fulfilled")
 	}
 
 	response, err := c.Client.R().Get(metadata.URL)
@@ -204,7 +204,12 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 		internal.ErrorLog("Failed to fetch URL: %v\n", err.Error())
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer response.RawResponse.Body.Close()
+
+	if response.StatusCode() != http.StatusOK {
+		internal.WarningLog("Skipping URL %s because status code is %d\n", metadata.URL, response.StatusCode())
+		return nil, nil
+	}
 
 	isIPBlocked, reason := statusCode(response)
 	if isIPBlocked {
@@ -212,7 +217,7 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 	}
 
 	contentType := response.Header().Get("Content-Type")
-	bodyReader, err := charset.NewReader(response.Body, contentType)
+	bodyReader, err := charset.NewReader(response.RawResponse.Body, contentType)
 	if err != nil {
 		internal.ErrorLog("Failed to create charset reader: %s\n", err.Error())
 		return nil, err
@@ -255,7 +260,6 @@ func (c *clientRequest) CollectImgTagsLink(metadata *ComicMetadata) ([]string, e
 			internal.ErrorLog("could not get anything from given metadata")
 		}
 	})
-
 	internal.InfoLog("Found %d images on page %s\n", len(links), metadata.URL)
 	return links, nil
 }

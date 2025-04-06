@@ -179,7 +179,7 @@ func (gc *generateComic) processChapterLinks(comicDir string, allLinks []string,
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return errors.Join(ctx.Err(), fmt.Errorf("for this link %s", rawURL))
 			default:
 				return gc.processComicChapter(
 					comicDir,
@@ -287,7 +287,7 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 		}
 
 		if err := pdfGen.AddImageToPDF(imageData); err != nil {
-			internal.ErrorLog("Error adding image to PDF: %s\n", err.Error())
+			internal.ErrorLog("Error adding image to PDF for this [%s] link with error [%s] \n", lowerCaseImgURL, err.Error())
 			return err
 		}
 	}
