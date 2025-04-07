@@ -182,10 +182,10 @@ func (c *clientRequest) CollectLinks(metadata *ComicMetadata) ([]string, error) 
 
 	if isRange && !isSingle {
 		internal.InfoLog("Filtering chapters range %d-%d\n", metadata.MinChapter, metadata.MaxChapter)
-		links = links[metadata.MinChapter : metadata.MaxChapter+1]
+		links = links[metadata.MinChapter:metadata.MaxChapter]
 	} else if isSingle && !isRange {
-		internal.InfoLog("Selecting single chapter %d\n", metadata.Single+1)
-		links = links[metadata.Single : metadata.Single+1]
+		internal.InfoLog("Selecting single chapter %d\n", metadata.Single-1)
+		links = links[metadata.Single-1 : metadata.Single]
 	}
 
 	return links, nil

@@ -3,9 +3,10 @@ package exports
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"image"
 	"image/jpeg"
+	"net/url"
+	"path"
 	"sync"
 
 	"github.com/pwnholic/comdown/internal"
@@ -26,81 +27,105 @@ func NewPDFGenerator() *PDFGenerator {
 	return &PDFGenerator{pdf: pdf}
 }
 
-func isBlankImage(img image.Image) bool {
-	bounds := img.Bounds()
-	blankPixels := 0
-	totalPixels := bounds.Dx() * bounds.Dy()
-
-	// Sample pixels to check for blankness (check every 10th pixel for performance)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y += 10 {
-		for x := bounds.Min.X; x < bounds.Max.X; x += 10 {
-			r, g, b, a := img.At(x, y).RGBA()
-			// Consider pixel blank if it's white (or transparent)
-			if r == 0xFFFF && g == 0xFFFF && b == 0xFFFF || a == 0 {
-				blankPixels++
-			}
-		}
-	}
-	// If more than 90% of sampled pixels are blank, consider the image blank
-	blankRatio := float64(blankPixels) / float64(totalPixels/100)
-	return blankRatio > 90
-}
-
-func (p *PDFGenerator) AddImageToPDF(imgBytes []byte) error {
+func (p *PDFGenerator) AddImageToPDF(imgBytes []byte, fileName, rawURL string) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	if imgBytes == nil {
+	if len(imgBytes) == 0 {
 		internal.WarningLog("Skipping empty image data")
-		return nil
-	}
-
-	sig := bytes.Equal(imgBytes[:2], []byte{0xFF, 0xD8})
-	if !sig {
-		internal.WarningLog("Invalid JPEG signature, skipping corrupt image")
 		return nil
 	}
 
 	img, format, err := image.Decode(bytes.NewReader(imgBytes))
 	if err != nil {
-		internal.WarningLog("failed to decode image: %s", err.Error())
-		return nil
-	}
-
-	// Check for blank/white image
-	if isBlankImage(img) {
-		internal.WarningLog("Skipping blank/white image")
+		internal.WarningLog("Failed to decode image: %v", err)
 		return nil
 	}
 
 	bounds := img.Bounds()
-	if bounds.Dx() < 1 || bounds.Dy() < 1 || format == "" {
-		internal.WarningLog("Skipping invalid image | Dimensions: %dx%d | Format: %s",
-			bounds.Dx(), bounds.Dy(), format)
+	width, height := bounds.Dx(), bounds.Dy()
+
+	if width < 1 || height < 1 {
+		internal.WarningLog("Skipping invalid image dimensions: %dx%d", width, height)
 		return nil
 	}
 
-	// Convert image back to bytes for PDF processing
+	if isSuspiciousBlankImage(img) {
+		internal.WarningLog("Skipping suspicious blank/white image with unusual size: %dx%d", width, height)
+		return nil
+	}
+
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
-		return fmt.Errorf("failed to re-encode image: %w", err)
+		internal.WarningLog("Failed to convert image to JPEG: %v (Original format: %s)", err, format)
+		return nil
 	}
 
 	imageHolder, err := gopdf.ImageHolderByBytes(buf.Bytes())
 	if err != nil {
-		return fmt.Errorf("failed to create image holder: %w", err)
+		internal.WarningLog("Failed to create PDF image holder: %v", err)
+		return nil
 	}
 
 	pageSize := &gopdf.Rect{
-		W: float64(bounds.Dx())*72/128 - 1,
-		H: float64(bounds.Dy())*72/128 - 1,
+		W: float64(width)*72/128 - 1,
+		H: float64(height)*72/128 - 1,
 	}
 
 	p.pdf.AddPageWithOption(gopdf.PageOption{PageSize: pageSize})
 	if err := p.pdf.ImageByHolder(imageHolder, 0, 0, nil); err != nil {
-		return fmt.Errorf("failed to add image to PDF: %w", err)
+		internal.WarningLog("Failed to add image to PDF: %v", err)
+		return nil
 	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		internal.WarningLog("invalid URL : %v", err)
+		return nil
+	}
+	lastSegment := path.Base(parsedURL.Path)
+	internal.InfoLog("format: (%s), size: (%dx%d), filename: (%s) pdf: (%s) \n", format, width, height, lastSegment, fileName)
 	return nil
+}
+
+// Fungsi untuk mendeteksi gambar kosong/putih yang mencurigakan
+func isSuspiciousBlankImage(img image.Image) bool {
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+
+	// Ukuran yang dianggap tidak biasa (sesuaikan threshold sesuai kebutuhan)
+	unusualSize := width > 5000 || height > 5000 || (width*height) > 25000000 // 25MP
+
+	if !unusualSize {
+		return false
+	}
+
+	// Sample beberapa pixel untuk mengecek apakah gambar kosong/putih
+	samplePoints := []image.Point{
+		{bounds.Min.X, bounds.Min.Y},
+		{bounds.Max.X - 1, bounds.Min.Y},
+		{bounds.Min.X, bounds.Max.Y - 1},
+		{bounds.Max.X - 1, bounds.Max.Y - 1},
+		{width / 2, height / 2},
+	}
+
+	for _, pt := range samplePoints {
+		if !isWhitePixel(img, pt.X, pt.Y) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Fungsi pembantu untuk mengecek pixel putih
+func isWhitePixel(img image.Image, x, y int) bool {
+	if !image.Pt(x, y).In(img.Bounds()) {
+		return false
+	}
+
+	r, g, b, a := img.At(x, y).RGBA()
+	return r == 0xffff && g == 0xffff && b == 0xffff && a == 0xffff
 }
 
 func (p *PDFGenerator) SavePDF(outputPath string) error {

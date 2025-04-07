@@ -292,7 +292,7 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 			return err
 		}
 
-		if err := pdfGen.AddImageToPDF(imageData); err != nil {
+		if err := pdfGen.AddImageToPDF(imageData, outputFilename, lowerCaseImgURL); err != nil {
 			internal.ErrorLog("Error adding image to PDF for this [%s] link with error [%s] \n", lowerCaseImgURL, err.Error())
 			return err
 		}

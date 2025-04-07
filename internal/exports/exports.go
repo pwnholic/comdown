@@ -2,7 +2,7 @@ package exports
 
 type DocumentExporter struct {
 	PDF interface {
-		AddImageToPDF(imgBytes []byte) error
+		AddImageToPDF(imgBytes []byte, imgLink, rawURL string) error
 		SavePDF(outputPath string) error
 	}
 }
