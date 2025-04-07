@@ -88,19 +88,16 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte, fileName, rawURL string) e
 	return nil
 }
 
-// Fungsi untuk mendeteksi gambar kosong/putih yang mencurigakan
 func isSuspiciousBlankImage(img image.Image) bool {
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
-	// Ukuran yang dianggap tidak biasa (sesuaikan threshold sesuai kebutuhan)
 	unusualSize := width > 5000 || height > 5000 || (width*height) > 25000000 // 25MP
 
 	if !unusualSize {
 		return false
 	}
 
-	// Sample beberapa pixel untuk mengecek apakah gambar kosong/putih
 	samplePoints := []image.Point{
 		{bounds.Min.X, bounds.Min.Y},
 		{bounds.Max.X - 1, bounds.Min.Y},
@@ -118,7 +115,6 @@ func isSuspiciousBlankImage(img image.Image) bool {
 	return true
 }
 
-// Fungsi pembantu untuk mengecek pixel putih
 func isWhitePixel(img image.Image, x, y int) bool {
 	if !image.Pt(x, y).In(img.Bounds()) {
 		return false
@@ -143,5 +139,6 @@ func (p *PDFGenerator) Close() {
 
 	if p.pdf != nil {
 		p.pdf.Close()
+		p.pdf = nil
 	}
 }
