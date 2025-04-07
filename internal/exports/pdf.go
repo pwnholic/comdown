@@ -136,3 +136,16 @@ func (p *PDFGenerator) Close() {
 		p.pdf = nil
 	}
 }
+
+func (p *PDFGenerator) Reset() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	newPdf := &gopdf.GoPdf{}
+	newPdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: *gopdf.PageSizeA4,
+	})
+	newPdf.SetCompressLevel(0)
+	p.pdf = newPdf
+}

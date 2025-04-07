@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path"
@@ -243,7 +244,10 @@ func (gc *generateComic) processComicChapter(
 
 func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilename string) error {
 	pdfGen := gc.pdfPool.Get().(*exports.PDFGenerator)
-	defer gc.pdfPool.Put(pdfGen)
+	defer func() {
+		pdfGen.Reset()
+		gc.pdfPool.Put(pdfGen)
+	}()
 
 	if len(imgFromPage) < 1 {
 		internal.ErrorLog("image form page should not be 0\n")
@@ -262,6 +266,8 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 			internal.ErrorLog("could not get image byte data with error :%s\n", err.Error())
 			return err
 		}
+
+		log.Println(lowerCaseImgURL)
 
 		if err := pdfGen.AddImageToPDF(imageData, outputFilename, lowerCaseImgURL); err != nil {
 			internal.ErrorLog("Error adding image to PDF for this [%s] link with error [%s] \n", lowerCaseImgURL, err.Error())

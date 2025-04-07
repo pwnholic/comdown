@@ -284,6 +284,11 @@ func processImage(imgBytes []byte, enhance bool) ([]byte, error) {
 		return nil, nil
 	}
 
+	if isImageBlank(img) {
+		internal.WarningLog("Skipping blank image\n")
+		return nil, nil
+	}
+
 	lowCaseFormat := strings.ToLower(format)
 	if slices.Contains([]string{"gif"}, format) {
 		internal.WarningLog("Skipping gif\n")
@@ -299,6 +304,26 @@ func processImage(imgBytes []byte, enhance bool) ([]byte, error) {
 	default:
 		return encodeToJPEG(img, enhance)
 	}
+}
+
+func isImageBlank(img image.Image) bool {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	if width <= 10 || height <= 10 {
+		return true
+	}
+
+	firstColor := img.At(bounds.Min.X, bounds.Min.Y)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if img.At(x, y) != firstColor {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func processWebPImage(imgBytes []byte, enhance bool) ([]byte, error) {
