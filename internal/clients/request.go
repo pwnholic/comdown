@@ -215,7 +215,6 @@ func validateMetadataForImages(metadata *ComicMetadata) error {
 
 func extractImageLinks(document *goquery.Document, metadata *ComicMetadata) []string {
 	var links []string
-
 	document.Find(metadata.ListImageURL).Each(func(i int, s *goquery.Selection) {
 		if len(metadata.AttrImage) > 0 && len(metadata.Pattern) == 0 {
 			if href, exists := s.Attr(metadata.AttrImage); exists {

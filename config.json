@@ -28,6 +28,13 @@
     "attr_image": "src"
   },
   {
+    "hostname": "komiktap.info",
+    "list_chapter_url": "ul.clstyle li div.chbox div.eph-num a",
+    "attr_chapter": "href",
+    "list_image_url": "script",
+    "pattern": "\"images\":\\s*\\[([^\\]]+)\\]"
+  },
+  {
     "hostname": "tenshi01.id",
     "list_chapter_url": "div.eplister ul li div.chbox div.eph-num a",
     "attr_chapter": "href",
