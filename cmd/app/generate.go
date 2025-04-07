@@ -56,29 +56,29 @@ func (gc *generateComic) processBatchComic() error {
 	g, ctx := errgroup.WithContext(gc.ctx)
 	g.SetLimit(len(gc.flag.URLs))
 	errChan := make(chan error, len(gc.flag.URLs))
+
 	for _, url := range gc.flag.URLs {
-		g.Go(func(url string) func() error {
-			return func() error {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					localFlag := &Flag{
-						URL:           url,
-						MaxChapter:    gc.flag.MaxChapter,
-						MinChapter:    gc.flag.MinChapter,
-						Single:        gc.flag.Single,
-						MaxConcurrent: gc.flag.MaxConcurrent,
-						MergeSize:     gc.flag.MergeSize,
-					}
-					if err := gc.processSingleComic(localFlag); err != nil {
-						errChan <- fmt.Errorf("error processing %s: %w", url, err)
-						return err
-					}
-					return nil
+		url := url
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				localFlag := &Flag{
+					URL:           url,
+					MaxChapter:    gc.flag.MaxChapter,
+					MinChapter:    gc.flag.MinChapter,
+					Single:        gc.flag.Single,
+					MaxConcurrent: gc.flag.MaxConcurrent,
+					MergeSize:     gc.flag.MergeSize,
 				}
+				if err := gc.processSingleComic(localFlag); err != nil {
+					errChan <- fmt.Errorf("error processing %s: %w", url, err)
+					return err
+				}
+				return nil
 			}
-		}(url))
+		})
 	}
 
 	if err := g.Wait(); err != nil {
@@ -102,8 +102,7 @@ func getLastPathSegment(rawURL string) (string, error) {
 	}
 	fullPath := u.Path
 	fullPath = strings.TrimSuffix(fullPath, "/")
-	lastSegment := path.Base(fullPath)
-	return lastSegment, nil
+	return path.Base(fullPath), nil
 }
 
 func (gc *generateComic) processSingleComic(flag *Flag) error {
@@ -116,7 +115,7 @@ func (gc *generateComic) processSingleComic(flag *Flag) error {
 		return err
 	}
 
-	dir := fmt.Sprintf("comics/%s", folderName)
+	dir := filepath.Join("comics", folderName)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create comic directory: %w", err)
 	}
@@ -160,7 +159,7 @@ func (gc *generateComic) processSingleComic(flag *Flag) error {
 
 type processResults struct {
 	generatedFiles []string
-	batchLinks     []map[float64][]string
+	batchLinks     map[string][]string
 	totalImages    int
 }
 
@@ -168,11 +167,8 @@ func (gc *generateComic) processChapterLinks(comicDir string, allLinks []string,
 	g, ctx := errgroup.WithContext(gc.ctx)
 	g.SetLimit(gc.flag.MaxConcurrent)
 
-	var (
-		generatedFiles []string
-		batchLinks     []map[float64][]string
-		totalImages    int
-	)
+	var results processResults
+	results.batchLinks = make(map[string][]string)
 
 	for _, rawURL := range allLinks {
 		rawURL := rawURL
@@ -181,14 +177,7 @@ func (gc *generateComic) processChapterLinks(comicDir string, allLinks []string,
 			case <-ctx.Done():
 				return errors.Join(ctx.Err(), fmt.Errorf("for this link %s", rawURL))
 			default:
-				return gc.processComicChapter(
-					comicDir,
-					rawURL,
-					attr,
-					&generatedFiles,
-					&batchLinks,
-					&totalImages,
-				)
+				return gc.processComicChapter(comicDir, rawURL, attr, &results)
 			}
 		})
 	}
@@ -197,20 +186,13 @@ func (gc *generateComic) processChapterLinks(comicDir string, allLinks []string,
 		return nil, fmt.Errorf("error processing chapters: %w", err)
 	}
 
-	return &processResults{
-		generatedFiles: generatedFiles,
-		batchLinks:     batchLinks,
-		totalImages:    totalImages,
-	}, nil
+	return &results, nil
 }
 
 func (gc *generateComic) processComicChapter(
-	comicDir,
-	rawURL string,
+	comicDir, rawURL string,
 	attr *clients.ScraperConfig,
-	generatedFiles *[]string,
-	batchLinks *[]map[float64][]string,
-	totalImages *int,
+	results *processResults,
 ) error {
 	titleStr, err := gc.clients.Website.GetChapterNumber(rawURL)
 	if err != nil {
@@ -239,27 +221,27 @@ func (gc *generateComic) processComicChapter(
 	}
 
 	gc.mutex.Lock()
-	*totalImages += len(imgFromPage)
+	results.totalImages += len(imgFromPage)
 	gc.mutex.Unlock()
 
 	if gc.flag.MergeSize > 0 {
-		titleFloat, err := strconv.ParseFloat(titleStr, 64)
-		if err != nil {
-			internal.WarningLog("Chapter title is not a number, using position instead: %s\n", titleStr)
-			titleFloat = float64(len(*batchLinks) + 1)
-		}
 		gc.mutex.Lock()
-		*batchLinks = append(*batchLinks, map[float64][]string{
-			titleFloat: imgFromPage,
-		})
+		results.batchLinks[titleStr] = imgFromPage
 		gc.mutex.Unlock()
 		return nil
 	}
 
-	return gc.processChapterImages(imgFromPage, outputFilename, generatedFiles)
+	if err := gc.processChapterImages(imgFromPage, outputFilename); err != nil {
+		return err
+	}
+
+	gc.mutex.Lock()
+	results.generatedFiles = append(results.generatedFiles, outputFilename)
+	gc.mutex.Unlock()
+	return nil
 }
 
-func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilename string, generatedFiles *[]string) error {
+func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilename string) error {
 	pdfGen := gc.pdfPool.Get().(*exports.PDFGenerator)
 	defer gc.pdfPool.Put(pdfGen)
 
@@ -284,7 +266,7 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, ext, gc.flag.EnhanceImage)
 		if imageData == nil {
 			internal.ErrorLog("This link [%s] has empty image", lowerCaseImgURL)
-			return nil
+			continue
 		}
 
 		if err != nil {
@@ -299,51 +281,72 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 	}
 
 	if err := pdfGen.SavePDF(outputFilename); err != nil {
-		gc.pdfPool.Put(pdfGen) // <<-- pastikan dikembalikan meski error
 		return err
 	}
 
-	gc.pdfPool.Put(pdfGen)
-
 	internal.SuccessLog("Saved to %s\n", outputFilename)
-
-	gc.mutex.Lock()
-	*generatedFiles = append(*generatedFiles, outputFilename)
-	gc.mutex.Unlock()
 	return nil
 }
 
-func (gc *generateComic) processMergeChapter(batchLinks []map[float64][]string, comicDir string) error {
+func (gc *generateComic) processMergeChapter(batchLinks map[string][]string, comicDir string) error {
 	internal.InfoLog("Starting batch processing with size %d\n", gc.flag.MergeSize)
-	batchSize := len(batchLinks) / gc.flag.MergeSize
-	if batchSize <= 0 {
-		batchSize = 1
+	if gc.flag.MergeSize <= 0 {
+		return nil
 	}
-	batches := iterateMapInBatch(batchLinks, batchSize)
 
-	var generatedFiles []string
+	// Convert map to slice of chapters for sorting
+	type chapter struct {
+		title  string
+		images []string
+	}
+	var chapters []chapter
 
+	for title, images := range batchLinks {
+		chapters = append(chapters, chapter{title, images})
+	}
+
+	// Sort chapters by their title (assuming it's a number)
+	sort.Slice(chapters, func(i, j int) bool {
+		numI, errI := strconv.ParseFloat(chapters[i].title, 64)
+		numJ, errJ := strconv.ParseFloat(chapters[j].title, 64)
+		if errI != nil || errJ != nil {
+			return chapters[i].title < chapters[j].title
+		}
+		return numI < numJ
+	})
+
+	// Process in batches
 	g, ctx := errgroup.WithContext(gc.ctx)
 	g.SetLimit(gc.flag.MaxConcurrent)
 
-	for _, batch := range batches {
-		for title, items := range batch {
-			title, items := title, items
-			g.Go(func() error {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					filename := filepath.Join(comicDir, fmt.Sprintf("%s.pdf", title))
-					err := gc.processChapterImages(items, filename, &generatedFiles)
-					if err != nil {
-						return fmt.Errorf("error processing batch %s: %w", title, err)
-					}
-					return nil
+	for i := 0; i < len(chapters); i += gc.flag.MergeSize {
+		end := min(i+gc.flag.MergeSize, len(chapters))
+		batch := chapters[i:end]
+
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				var images []string
+				startTitle := batch[0].title
+				endTitle := batch[len(batch)-1].title
+
+				title := startTitle
+				if startTitle != endTitle {
+					title = fmt.Sprintf("%s-%s", startTitle, endTitle)
 				}
-			})
-		}
+
+				for _, ch := range batch {
+					images = append(images, ch.images...)
+				}
+
+				filename := filepath.Join("comics", comicDir, fmt.Sprintf("%s.pdf", title))
+				return gc.processChapterImages(images, filename)
+			}
+		})
 	}
+
 	return g.Wait()
 }
 
@@ -355,47 +358,4 @@ func isFileExists(filename string, cache *sync.Map) bool {
 	exists := err == nil
 	cache.Store(filename, exists)
 	return exists
-}
-
-func iterateMapInBatch(data []map[float64][]string, batchSize int) []map[string][]string {
-	type chapter struct {
-		num    float64
-		images []string
-	}
-	var chapters []chapter
-
-	for _, m := range data {
-		for chapterNum, imageLink := range m {
-			chapters = append(chapters, chapter{chapterNum, imageLink})
-		}
-	}
-
-	sort.Slice(chapters, func(i, j int) bool {
-		return chapters[i].num < chapters[j].num
-	})
-
-	var batches []map[string][]string
-
-	for i := 0; i < len(chapters); i += batchSize {
-		end := min(i+batchSize, len(chapters))
-		batch := chapters[i:end]
-
-		var images []string
-		startNum := batch[0].num
-		endNum := batch[len(batch)-1].num
-
-		title := fmt.Sprintf("%g", startNum)
-		if startNum != endNum {
-			title = fmt.Sprintf("%g-%g", startNum, endNum)
-		}
-
-		title = strings.ReplaceAll(title, ".0", "")
-		title = strings.ReplaceAll(title, "-.0", "-")
-
-		for _, ch := range batch {
-			images = append(images, ch.images...)
-		}
-		batches = append(batches, map[string][]string{title: images})
-	}
-	return batches
 }
