@@ -55,11 +55,6 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte, fileName, rawURL string) e
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
-	if err := validateImageDimensions(width, height); err != nil {
-		internal.WarningLog("%v\n", err)
-		return nil
-	}
-
 	validFormats := []string{"jpg", "jpeg", "webp"}
 	if !slices.Contains(validFormats, strings.ToLower(format)) {
 		internal.WarningLog("Skipping unsupported image format: %s (only jpg/jpeg/webp allowed)\n", format)
@@ -73,19 +68,6 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte, fileName, rawURL string) e
 
 	logImageInfo(format, width, height, rawURL, fileName)
 	return nil
-}
-
-func validateImageDimensions(width, height int) error {
-	switch {
-	case width < 1 || height < 1:
-		return errors.New("skipping invalid image dimensions")
-	case width > maxImageSize || height > maxImageSize:
-		return errors.New("skipping excessively large image")
-	case (width * height) > (maxMegapixels * 1e6):
-		return errors.New("skipping image with too many megapixels")
-	default:
-		return nil
-	}
 }
 
 func (p *PDFGenerator) addImageToPage(imgBytes []byte, width, height int) error {
