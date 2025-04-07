@@ -111,7 +111,7 @@ func (gc *generateComic) processSingleComic(flag *Flag) error {
 
 	folderName, err := getLastPathSegment(flag.URL)
 	if err != nil {
-		internal.ErrorLog("Could not get path segment with error: %s", err.Error())
+		internal.ErrorLog("Could not get path segment with error: %s\n", err.Error())
 		return err
 	}
 
@@ -196,7 +196,7 @@ func (gc *generateComic) processComicChapter(
 ) error {
 	titleStr, err := gc.clients.Website.GetChapterNumber(rawURL)
 	if err != nil {
-		internal.ErrorLog("could not extract chapter number from URL: %s", rawURL)
+		internal.ErrorLog("could not extract chapter number from URL: %s\n", rawURL)
 		return err
 	}
 
@@ -246,31 +246,20 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 	defer gc.pdfPool.Put(pdfGen)
 
 	if len(imgFromPage) < 1 {
-		internal.ErrorLog("image form page should not be 0")
+		internal.ErrorLog("image form page should not be 0\n")
 		return nil
 	}
 
 	for _, imgURL := range imgFromPage {
 		lowerCaseImgURL := strings.ToLower(imgURL)
-		ext := gc.clients.Website.GetImageExtension(lowerCaseImgURL)
-		if ext == "" {
-			internal.WarningLog("Unsupported image format: %s\n", lowerCaseImgURL)
-			continue
-		}
-
-		if strings.Contains(ext, "gif") {
-			internal.WarningLog("Skipping gif %s\n", imgURL)
-			continue
-		}
-
-		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, ext, gc.flag.EnhanceImage)
+		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, gc.flag.EnhanceImage)
 		if imageData == nil {
-			internal.ErrorLog("This link [%s] has empty image", lowerCaseImgURL)
+			internal.ErrorLog("This link [%s] has empty image\n", lowerCaseImgURL)
 			continue
 		}
 
 		if err != nil {
-			internal.ErrorLog("could not get image byte data with error :%s", err.Error())
+			internal.ErrorLog("could not get image byte data with error :%s\n", err.Error())
 			return err
 		}
 
@@ -322,7 +311,6 @@ func (gc *generateComic) processMergeChapter(batchLinks map[string][]string, com
 	for i := 0; i < len(chapters); i += gc.flag.MergeSize {
 		end := min(i+gc.flag.MergeSize, len(chapters))
 		batch := chapters[i:end]
-
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
@@ -331,8 +319,8 @@ func (gc *generateComic) processMergeChapter(batchLinks map[string][]string, com
 				var images []string
 				startTitle := batch[0].title
 				endTitle := batch[len(batch)-1].title
-
 				title := startTitle
+
 				if startTitle != endTitle {
 					title = fmt.Sprintf("%s-%s", startTitle, endTitle)
 				}
@@ -354,8 +342,28 @@ func isFileExists(filename string, cache *sync.Map) bool {
 	if val, ok := cache.Load(filename); ok {
 		return val.(bool)
 	}
-	_, err := os.Stat(filename)
-	exists := err == nil
-	cache.Store(filename, exists)
-	return exists
+
+	info, err := os.Stat(filename)
+	if err != nil || info.IsDir() {
+		cache.Store(filename, false)
+		return false
+	}
+
+	if strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+		file, err := os.Open(filename)
+		if err != nil {
+			cache.Store(filename, false)
+			return false
+		}
+		defer file.Close()
+		header := make([]byte, 5)
+		if _, err := file.Read(header); err != nil || string(header) != "%PDF-" {
+			_ = os.Remove(filename)
+			internal.WarningLog("Removed corrupt PDF: %s\n", filename)
+			cache.Store(filename, false)
+			return false
+		}
+	}
+	cache.Store(filename, true)
+	return true
 }

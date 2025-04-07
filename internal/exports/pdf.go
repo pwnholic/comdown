@@ -3,14 +3,24 @@ package exports
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
-	"image/jpeg"
 	"net/url"
 	"path"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/pwnholic/comdown/internal"
 	"github.com/signintech/gopdf"
+)
+
+const (
+	defaultJPEGQuality = 90
+	dpi                = 128
+	ptsPerInch         = 72
+	maxImageSize       = 5000
+	maxMegapixels      = 25
 )
 
 type PDFGenerator struct {
@@ -32,96 +42,80 @@ func (p *PDFGenerator) AddImageToPDF(imgBytes []byte, fileName, rawURL string) e
 	defer p.mutex.Unlock()
 
 	if len(imgBytes) == 0 {
-		internal.WarningLog("Skipping empty image data")
+		internal.WarningLog("Skipping empty image data\n")
 		return nil
 	}
 
 	img, format, err := image.Decode(bytes.NewReader(imgBytes))
 	if err != nil {
-		internal.WarningLog("Failed to decode image: %v", err)
+		internal.WarningLog("Failed to decode image: %v\n", err)
 		return nil
 	}
 
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
-	if width < 1 || height < 1 {
-		internal.WarningLog("Skipping invalid image dimensions: %dx%d", width, height)
+	if err := validateImageDimensions(width, height); err != nil {
+		internal.WarningLog("%v\n", err)
 		return nil
 	}
 
-	if isSuspiciousBlankImage(img) {
-		internal.WarningLog("Skipping suspicious blank/white image with unusual size: %dx%d", width, height)
+	validFormats := []string{"jpg", "jpeg", "webp"}
+	if !slices.Contains(validFormats, strings.ToLower(format)) {
+		internal.WarningLog("Skipping unsupported image format: %s (only jpg/jpeg/webp allowed)\n", format)
 		return nil
 	}
 
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
-		internal.WarningLog("Failed to convert image to JPEG: %v (Original format: %s)", err, format)
+	if err := p.addImageToPage(imgBytes, width, height); err != nil {
+		internal.WarningLog("%v\n", err)
 		return nil
 	}
 
-	imageHolder, err := gopdf.ImageHolderByBytes(buf.Bytes())
+	logImageInfo(format, width, height, rawURL, fileName)
+	return nil
+}
+
+func validateImageDimensions(width, height int) error {
+	switch {
+	case width < 1 || height < 1:
+		return errors.New("skipping invalid image dimensions")
+	case width > maxImageSize || height > maxImageSize:
+		return errors.New("skipping excessively large image")
+	case (width * height) > (maxMegapixels * 1e6):
+		return errors.New("skipping image with too many megapixels")
+	default:
+		return nil
+	}
+}
+
+func (p *PDFGenerator) addImageToPage(imgBytes []byte, width, height int) error {
+	imageHolder, err := gopdf.ImageHolderByBytes(imgBytes)
 	if err != nil {
-		internal.WarningLog("Failed to create PDF image holder: %v", err)
-		return nil
+		return fmt.Errorf("failed to create PDF image holder: %w", err)
 	}
 
 	pageSize := &gopdf.Rect{
-		W: float64(width)*72/128 - 1,
-		H: float64(height)*72/128 - 1,
+		W: float64(width)*ptsPerInch/dpi - 1,
+		H: float64(height)*ptsPerInch/dpi - 1,
 	}
 
 	p.pdf.AddPageWithOption(gopdf.PageOption{PageSize: pageSize})
 	if err := p.pdf.ImageByHolder(imageHolder, 0, 0, nil); err != nil {
-		internal.WarningLog("Failed to add image to PDF: %v", err)
-		return nil
+		return fmt.Errorf("failed to add image to PDF: %w", err)
 	}
 
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		internal.WarningLog("invalid URL : %v", err)
-		return nil
-	}
-	lastSegment := path.Base(parsedURL.Path)
-	internal.InfoLog("format: (%s), size: (%dx%d), filename: (%s) pdf: (%s) \n", format, width, height, lastSegment, fileName)
 	return nil
 }
 
-func isSuspiciousBlankImage(img image.Image) bool {
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-
-	unusualSize := width > 5000 || height > 5000 || (width*height) > 25000000 // 25MP
-
-	if !unusualSize {
-		return false
+func logImageInfo(format string, width, height int, rawURL, fileName string) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		internal.WarningLog("invalid URL: %v\n", err)
+		return
 	}
-
-	samplePoints := []image.Point{
-		{bounds.Min.X, bounds.Min.Y},
-		{bounds.Max.X - 1, bounds.Min.Y},
-		{bounds.Min.X, bounds.Max.Y - 1},
-		{bounds.Max.X - 1, bounds.Max.Y - 1},
-		{width / 2, height / 2},
-	}
-
-	for _, pt := range samplePoints {
-		if !isWhitePixel(img, pt.X, pt.Y) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func isWhitePixel(img image.Image, x, y int) bool {
-	if !image.Pt(x, y).In(img.Bounds()) {
-		return false
-	}
-
-	r, g, b, a := img.At(x, y).RGBA()
-	return r == 0xffff && g == 0xffff && b == 0xffff && a == 0xffff
+	lastSegment := path.Base(parsedURL.Path)
+	internal.InfoLog("format: (%s), size: (%dx%d), image: (%s) pdf: (%s)\n",
+		format, width, height, lastSegment, fileName)
 }
 
 func (p *PDFGenerator) SavePDF(outputPath string) error {

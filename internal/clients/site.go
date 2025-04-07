@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -74,35 +73,6 @@ func (c *websiteConfig) GetHTMLTagAttrFromURL(rawURL string) *ScraperConfig {
 	}
 	internal.WarningLog("Configuration not found for domain: '%s'\n", host)
 	return nil
-}
-
-func (c *websiteConfig) GetImageExtension(url string) string {
-	fileName := path.Base(url)
-	if fileName == "" {
-		internal.ErrorLog("invalid URL: no file name found")
-		return ""
-	}
-
-	ext := strings.ToLower(path.Ext(fileName))
-	if ext == "" {
-		internal.ErrorLog("no file extension found in URL")
-		return ""
-	}
-
-	ext = strings.TrimPrefix(ext, ".")
-
-	supportedExtensions := map[string]bool{
-		"jpg":  true,
-		"jpeg": true,
-		"png":  true,
-		"webp": true,
-		"gif":  true,
-	}
-	if !supportedExtensions[ext] {
-		internal.ErrorLog("unsupported image extension: %s", ext)
-		return ""
-	}
-	return ext
 }
 
 func (w *websiteConfig) GetChapterNumber(urlRaw string) (string, error) {
