@@ -31,7 +31,7 @@ func parseFlag() *Flag {
 	minChapter := flag.Int("min-ch", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
 	maxChapter := flag.Int("max-ch", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
 	isSingle := flag.Int("single", 0, `[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set`)
-	maxConcurrent := flag.Int("x", 10, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
+	maxConcurrent := flag.Int("x", 16, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
 	mergeSize := flag.Int("merge", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
 
 	// TODO: made this more faster
