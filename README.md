@@ -1,38 +1,28 @@
 # Usage
 
-Comic Downloader - Download manga chapters from supported websites
+**Comic Downloader - Download manga chapters from supported websites**
 
 Usage: `comdown -url <url>` or `comdown -batch <file>`
 
 ```
-  -batch string
-        Path to file containing multiple URLs (one per line)
-
-  -enhance
-        [SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)
-
-  -h    Display this help message and exit
-
+  -b string
+    	Path to file containing multiple URLs (one per line)
+  -e	[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)
+  -h	Display this help message and exit
   -help
-        Alias for -h
-
-  -max-ch int
-        [Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set
-
-  -merge int
-        Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc
-
-  -min-ch int
-        [Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set
-
-  -single int
-        [Single Mode] Download specific chapter number. Takes precedence over range mode if both are set
-
-  -url string
-        Target website URL (e.g. "https://komikindo.id/one-piece")
-
+    	Alias for -h
+  -m int
+    	Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc
+  -max int
+    	[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set
+  -min int
+    	[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set
+  -s int
+    	[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set
+  -u string
+    	Target website URL (e.g. "https://komikindo.id/one-piece")
   -x int
-        Maximum active goroutine (default: 10). Higher values may get rate-limited (default 10)
+    	Maximum active goroutine (default: 10). Higher values may get rate-limited (default 16)
 ```
 
 Examples:

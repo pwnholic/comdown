@@ -25,17 +25,14 @@ type Flag struct {
 func parseFlag() *Flag {
 	help := flag.Bool("h", false, "Display this help message and exit")
 	flag.BoolVar(help, "help", false, "Alias for -h")
-
-	url := flag.String("url", "", `Target website URL (e.g. "https://komikindo.id/one-piece")`)
-	batchFile := flag.String("batch", "", `Path to file containing multiple URLs (one per line)`)
-	minChapter := flag.Int("min-ch", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
-	maxChapter := flag.Int("max-ch", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
-	isSingle := flag.Int("single", 0, `[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set`)
+	url := flag.String("u", "", `Target website URL (e.g. "https://komikindo.id/one-piece")`)
+	batchFile := flag.String("b", "", `Path to file containing multiple URLs (one per line)`)
+	minChapter := flag.Int("max", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
+	maxChapter := flag.Int("min", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
+	isSingle := flag.Int("s", 0, `[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set`)
 	maxConcurrent := flag.Int("x", 16, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
-	mergeSize := flag.Int("merge", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
-
-	// TODO: made this more faster
-	enhance := flag.Bool("enhance", false, `[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)`)
+	mergeSize := flag.Int("m", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
+	enhance := flag.Bool("e", false, `[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)`)
 
 	flag.Parse()
 
