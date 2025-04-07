@@ -25,13 +25,6 @@ Usage: `comdown -url <url>` or `comdown -batch <file>`
     	Maximum active goroutine (default: 10). Higher values may get rate-limited (default 16)
 ```
 
-Examples:
-
-- Download single chapter: -url <URL> -single 42 -enhance
-- Download range with enhancement: -url <URL> -min-ch 10 -max-ch 20 -enhance
-- Batch output without enhancement: -url <URL> -min-ch 1 -max-ch 50 -merge 10
-- Process multiple URLs from file: -batch urls.txt -min-ch 1 -max-ch 10
-
 # Website Support
 
 You can add new one by your self or see this [See this](./config.json)
