@@ -261,9 +261,10 @@ func (gc *generateComic) processComicChapter(
 
 func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilename string, generatedFiles *[]string) error {
 	pdfGen := gc.pdfPool.Get().(*exports.PDFGenerator)
+	defer gc.pdfPool.Put(pdfGen)
+
 	if len(imgFromPage) < 1 {
 		internal.ErrorLog("image form page should not be 0")
-		gc.pdfPool.Put(pdfGen)
 		return nil
 	}
 

@@ -4,7 +4,6 @@ type DocumentExporter struct {
 	PDF interface {
 		AddImageToPDF(imgBytes []byte) error
 		SavePDF(outputPath string) error
-		Reset()
 	}
 }
 
