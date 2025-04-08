@@ -38,10 +38,10 @@ func parseFlag() *Flag {
 
 	if *help {
 		fmt.Println("Comic Downloader - Download manga chapters from supported websites")
-		fmt.Println("Usage: `comdown -url <url>` or `comdown -batch <file>`")
+		fmt.Println("Usage: `comdown -u <url>` or `comdown -b <file>`")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
-		fmt.Println("  Download single chapter: -u <URL> -single 42 -e")
+		fmt.Println("  Download single chapter: -u <URL> -s 42 -e")
 		fmt.Println("  Download range with enhancement: -u <URL> -min 10 -max 20 -e")
 		fmt.Println("  Batch output without enhancement: -u <URL> -min 1 -max 50 -M 10")
 		fmt.Println("  Process multiple URLs from file: -batch urls.txt -min 1 -max 10")
