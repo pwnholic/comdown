@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"path"
@@ -255,10 +254,9 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 	}
 
 	for _, imgURL := range imgFromPage {
-		lowerCaseImgURL := strings.ToLower(imgURL)
-		imageData, err := gc.clients.Request.CollectImage(lowerCaseImgURL, gc.flag.EnhanceImage)
+		imageData, err := gc.clients.Request.CollectImage(imgURL, gc.flag.EnhanceImage)
 		if imageData == nil {
-			internal.ErrorLog("This link [%s] has empty image\n", lowerCaseImgURL)
+			internal.ErrorLog("This link [%s] has empty image\n", imgURL)
 			continue
 		}
 
@@ -267,10 +265,8 @@ func (gc *generateComic) processChapterImages(imgFromPage []string, outputFilena
 			return err
 		}
 
-		log.Println(lowerCaseImgURL)
-
-		if err := pdfGen.AddImageToPDF(imageData, outputFilename, lowerCaseImgURL); err != nil {
-			internal.ErrorLog("Error adding image to PDF for this [%s] link with error [%s] \n", lowerCaseImgURL, err.Error())
+		if err := pdfGen.AddImageToPDF(imageData, outputFilename, imgURL); err != nil {
+			internal.ErrorLog("Error adding image to PDF for this [%s] link with error [%s] \n", imgURL, err.Error())
 			return err
 		}
 	}

@@ -40,5 +40,12 @@
     "attr_chapter": "href",
     "list_image_url": "script",
     "pattern": "\"images\":\\s*\\[([^\\]]+)\\]"
+  },
+  {
+    "hostname": "apkomik.cc",
+    "list_chapter_url": "div.eplister ul li div.chbox div.eph-num a",
+    "attr_chapter": "href",
+    "list_image_url": "script",
+    "pattern": "\"images\":\\s*\\[([^\\]]+)\\]"
   }
 ]
