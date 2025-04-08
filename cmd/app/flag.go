@@ -43,7 +43,7 @@ func parseFlag() *Flag {
 		fmt.Println("\nExamples:")
 		fmt.Println("  Download single chapter: -u <URL> -single 42 -e")
 		fmt.Println("  Download range with enhancement: -u <URL> -min 10 -max 20 -e")
-		fmt.Println("  Batch output without enhancement: -u <URL> -min 1 -max 50 -merge 10")
+		fmt.Println("  Batch output without enhancement: -u <URL> -min 1 -max 50 -M 10")
 		fmt.Println("  Process multiple URLs from file: -batch urls.txt -min 1 -max 10")
 		os.Exit(0)
 	}

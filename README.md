@@ -5,25 +5,32 @@
 Usage: `comdown -url <url>` or `comdown -batch <file>`
 
 ```
+  -M int
+    	Merge every N chapters into one PDF
   -b string
-    	Path to file containing multiple URLs (one per line)
-  -e	[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)
-  -h	Display this help message and exit
+    	File with list of URLs
+  -e	Enhance image quality (slower)
+  -h	Show help
   -help
     	Alias for -h
-  -m int
-    	Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc
   -max int
-    	[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set
+    	End chapter (for range)
   -min int
-    	[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set
+    	Start chapter (for range)
   -s int
-    	[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set
+    	Download specific chapter (overrides range)
   -u string
-    	Target website URL (e.g. "https://komikindo.id/one-piece")
+    	Target URL (e.g. https://komikindo.id/one-piece)
   -x int
-    	Maximum active goroutine (default: 10). Higher values may get rate-limited (default 16)
+    	Max goroutines (default 10) (default 16)
 ```
+
+Examples:
+
+- Download single chapter: ` -u <URL> -single 42 -e`
+- Download range with enhancement: `-u <URL> -min 10 -max 20 -e`
+- Batch output without enhancement: `-u <URL> -min 1 -max 50 -M 10`
+- Process multiple URLs from file: `-batch urls.txt -min 1 -max 10`
 
 # Website Support
 
