@@ -41,20 +41,20 @@ func parseFlag() *Flag {
 		fmt.Println("Usage: `comdown -url <url>` or `comdown -batch <file>`")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
-		fmt.Println("  Download single chapter: -url <URL> -single 42 -enhance")
-		fmt.Println("  Download range with enhancement: -url <URL> -min-ch 10 -max-ch 20 -enhance")
-		fmt.Println("  Batch output without enhancement: -url <URL> -min-ch 1 -max-ch 50 -merge 10")
-		fmt.Println("  Process multiple URLs from file: -batch urls.txt -min-ch 1 -max-ch 10")
+		fmt.Println("  Download single chapter: -u <URL> -single 42 -e")
+		fmt.Println("  Download range with enhancement: -u <URL> -min 10 -max 20 -e")
+		fmt.Println("  Batch output without enhancement: -u <URL> -min 1 -max 50 -merge 10")
+		fmt.Println("  Process multiple URLs from file: -batch urls.txt -min 1 -max 10")
 		os.Exit(0)
 	}
 
 	if *url == "" && *batchFile == "" {
-		fmt.Println("Either URL or batch file is required. Use -url or -batch flag")
+		fmt.Println("Either URL or batch file is required. Use -u or -b flag")
 		os.Exit(1)
 	}
 
 	if *url != "" && *batchFile != "" {
-		internal.ErrorLog("Cannot use both -url and -batch at the same time")
+		internal.ErrorLog("Cannot use both -u and -b at the same time")
 		os.Exit(1)
 	}
 
@@ -89,7 +89,7 @@ func parseFlag() *Flag {
 	}
 
 	if *isSingle > 0 && (*minChapter > 0 || *maxChapter > 0) {
-		internal.WarningLog("-single takes precedence over range flags")
+		internal.WarningLog("-s takes precedence over range flags")
 		os.Exit(1)
 	}
 
