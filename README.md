@@ -30,7 +30,7 @@ Examples:
 - Download single chapter: ` -u <URL> -single 42 -e`
 - Download range with enhancement: `-u <URL> -min 10 -max 20 -e`
 - Batch output without enhancement: `-u <URL> -min 1 -max 50 -M 10`
-- Process multiple URLs from file: `-batch urls.txt -min 1 -max 10`
+- Process multiple URLs from file: `-b urls.txt -min 1 -max 10`
 
 # Website Support
 
