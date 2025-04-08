@@ -23,16 +23,16 @@ type Flag struct {
 }
 
 func parseFlag() *Flag {
-	help := flag.Bool("h", false, "Display this help message and exit")
+	help := flag.Bool("h", false, "Show help")
 	flag.BoolVar(help, "help", false, "Alias for -h")
-	url := flag.String("u", "", `Target website URL (e.g. "https://komikindo.id/one-piece")`)
-	batchFile := flag.String("b", "", `Path to file containing multiple URLs (one per line)`)
-	minChapter := flag.Int("min", 0, `[Range Mode] Starting chapter number (inclusive). Use with max-ch to define a range. Ignored when single is set`)
-	maxChapter := flag.Int("max", 0, `[Range Mode] Ending chapter number (inclusive). Use with min-ch to define a range. Ignored when single is set`)
-	isSingle := flag.Int("s", 0, `[Single Mode] Download specific chapter number. Takes precedence over range mode if both are set`)
-	maxConcurrent := flag.Int("x", 16, `Maximum active goroutine (default: 10). Higher values may get rate-limited`)
-	mergeSize := flag.Int("m", 0, `Merge every N chapters into single PDF (0 = no merging). Example: "5" will combine chapters 1-5, 6-10, etc`)
-	enhance := flag.Bool("e", false, `[SLOW OPERATION] Enable image quality enhancement (improves resolution and sharpness)`)
+	url := flag.String("u", "", "Target URL (e.g. https://komikindo.id/one-piece)")
+	batchFile := flag.String("b", "", "File with list of URLs")
+	minChapter := flag.Int("min", 0, "Start chapter (for range)")
+	maxChapter := flag.Int("max", 0, "End chapter (for range)")
+	isSingle := flag.Int("s", 0, "Download specific chapter (overrides range)")
+	maxConcurrent := flag.Int("x", 16, "Max goroutines (default 10)")
+	mergeSize := flag.Int("M", 0, "Merge every N chapters into one PDF")
+	enhance := flag.Bool("e", false, "Enhance image quality (slower)")
 
 	flag.Parse()
 

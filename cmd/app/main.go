@@ -33,7 +33,6 @@ func main() {
 		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36",
 	}
 
-	// mostly website will block our request so i do this :))
 	userAgent := userAgents[rand.Intn(len(userAgents))]
 	httpOpts := &clients.HTTPClientOptions{
 		RetryCount:       5,
